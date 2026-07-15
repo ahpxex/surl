@@ -802,6 +802,468 @@
     },
   });
 
+  // ---- 环境垫片:真实 bundle(React/Vite/路由/UI 库)会摸的 Web API ----
+  // 原则:能不崩、返回中性值;不假装有像素。
+
+  class Storage {
+    constructor() {
+      this._data = new Map();
+    }
+    get length() {
+      return this._data.size;
+    }
+    key(i) {
+      return [...this._data.keys()][i] ?? null;
+    }
+    getItem(k) {
+      const v = this._data.get(String(k));
+      return v === undefined ? null : v;
+    }
+    setItem(k, v) {
+      this._data.set(String(k), String(v));
+    }
+    removeItem(k) {
+      this._data.delete(String(k));
+    }
+    clear() {
+      this._data.clear();
+    }
+  }
+  g.Storage = Storage;
+  g.localStorage = new Storage();
+  g.sessionStorage = new Storage();
+
+  g.matchMedia = function (query) {
+    return {
+      matches: false,
+      media: String(query),
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return false;
+      },
+    };
+  };
+
+  class NoopObserver {
+    constructor(callback) {
+      this._callback = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  g.IntersectionObserver = NoopObserver;
+  g.ResizeObserver = NoopObserver;
+  g.MutationObserver = NoopObserver;
+  g.PerformanceObserver = NoopObserver;
+  g.PerformanceObserver.supportedEntryTypes = [];
+
+  g.getComputedStyle = function (el) {
+    return {
+      getPropertyValue() {
+        return "";
+      },
+      display: "block",
+      visibility: "visible",
+      opacity: "1",
+      pointerEvents: "auto",
+    };
+  };
+
+  g.requestIdleCallback = function (fn) {
+    return g.setTimeout(() => fn({ didTimeout: false, timeRemaining: () => 50 }), 1);
+  };
+  g.cancelIdleCallback = g.clearTimeout;
+
+  // 布局几何:不渲染像素,一律零矩形
+  const zeroRect = () => ({
+    x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0,
+    toJSON() { return this; },
+  });
+  Element.prototype.getBoundingClientRect = zeroRect;
+  Element.prototype.getClientRects = function () {
+    return [];
+  };
+  Element.prototype.scrollIntoView = function () {};
+  Element.prototype.scrollTo = function () {};
+  Element.prototype.focus = function () {};
+  Element.prototype.blur = function () {};
+  Element.prototype.click = function () {
+    this.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+  };
+  for (const prop of ["offsetWidth", "offsetHeight", "offsetTop", "offsetLeft",
+                      "clientWidth", "clientHeight", "clientTop", "clientLeft",
+                      "scrollTop", "scrollLeft", "scrollWidth", "scrollHeight"]) {
+    Object.defineProperty(Element.prototype, prop, {
+      configurable: true,
+      get() { return 0; },
+      set() {},
+    });
+  }
+
+  // React 等库对一批 DOM property 直接赋值(不走 setAttribute)
+  const reflectedProps = {
+    value: "value", checked: "checked", selected: "selected", disabled: "disabled",
+    src: "src", href: "href", type: "type", name: "name", placeholder: "placeholder",
+    htmlFor: "for", rel: "rel", target: "target", title: "title", lang: "lang",
+    dir: "dir", alt: "alt", role: "role",
+  };
+  for (const [prop, attr] of Object.entries(reflectedProps)) {
+    if (Object.getOwnPropertyDescriptor(Element.prototype, prop)) continue;
+    const isBool = prop === "checked" || prop === "selected" || prop === "disabled";
+    Object.defineProperty(Element.prototype, prop, {
+      configurable: true,
+      get() {
+        const v = this.getAttribute(attr);
+        return isBool ? v !== null : (v ?? "");
+      },
+      set(v) {
+        if (isBool) {
+          if (v) this.setAttribute(attr, "");
+          else this.removeAttribute(attr);
+        } else {
+          this.setAttribute(attr, String(v));
+        }
+      },
+    });
+  }
+  Object.defineProperty(Element.prototype, "tabIndex", {
+    configurable: true,
+    get() {
+      const v = this.getAttribute("tabindex");
+      return v === null ? -1 : Number(v) || 0;
+    },
+    set(v) {
+      this.setAttribute("tabindex", String(v));
+    },
+  });
+  Object.defineProperty(Element.prototype, "dataset", {
+    configurable: true,
+    get() {
+      const el = this;
+      return new Proxy({}, {
+        get(_, prop) {
+          if (typeof prop === "symbol") return undefined;
+          const v = el.getAttribute("data-" + prop.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()));
+          return v === null ? undefined : v;
+        },
+        set(_, prop, value) {
+          el.setAttribute("data-" + String(prop).replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()), String(value));
+          return true;
+        },
+        has(_, prop) {
+          return el.hasAttribute("data-" + String(prop).replace(/[A-Z]/g, (m) => "-" + m.toLowerCase()));
+        },
+      });
+    },
+  });
+  Object.defineProperty(Node.prototype, "isConnected", {
+    configurable: true,
+    get() {
+      return g.document.contains(this);
+    },
+  });
+
+  // 现代插入 API(React/库常用)
+  function toNode(x) {
+    return x instanceof Node ? x : g.document.createTextNode(String(x));
+  }
+  Element.prototype.append = function (...items) {
+    for (const item of items) this.appendChild(toNode(item));
+  };
+  Element.prototype.prepend = function (...items) {
+    const first = this.firstChild;
+    for (const item of items) this.insertBefore(toNode(item), first);
+  };
+  Element.prototype.before = function (...items) {
+    const p = this.parentNode;
+    if (p) for (const item of items) p.insertBefore(toNode(item), this);
+  };
+  Element.prototype.after = function (...items) {
+    const p = this.parentNode;
+    if (!p) return;
+    const ref = this.nextSibling;
+    for (const item of items) p.insertBefore(toNode(item), ref);
+  };
+  Element.prototype.replaceWith = function (...items) {
+    const p = this.parentNode;
+    if (!p) return;
+    for (const item of items) p.insertBefore(toNode(item), this);
+    p.removeChild(this);
+  };
+  Element.prototype.replaceChildren = function (...items) {
+    this.textContent = "";
+    for (const item of items) this.appendChild(toNode(item));
+  };
+  Element.prototype.insertAdjacentHTML = function (position, html) {
+    const frag = g.document.createElement("template-host");
+    frag.innerHTML = html;
+    const nodes = [...frag.childNodes];
+    if (position === "beforeend") for (const n of nodes) this.appendChild(n);
+    else if (position === "afterbegin") {
+      const first = this.firstChild;
+      for (const n of nodes) this.insertBefore(n, first);
+    } else if (position === "beforebegin") for (const n of nodes) this.parentNode && this.parentNode.insertBefore(n, this);
+    else if (position === "afterend") {
+      const ref = this.nextSibling;
+      for (const n of nodes) this.parentNode && this.parentNode.insertBefore(n, ref);
+    }
+  };
+  Element.prototype.insertAdjacentElement = function (position, el) {
+    if (position === "beforeend") this.appendChild(el);
+    else if (position === "afterbegin") this.insertBefore(el, this.firstChild);
+    else if (position === "beforebegin" && this.parentNode) this.parentNode.insertBefore(el, this);
+    else if (position === "afterend" && this.parentNode) this.parentNode.insertBefore(el, this.nextSibling);
+    return el;
+  };
+  Element.prototype.insertAdjacentText = function (position, text) {
+    this.insertAdjacentElement(position, g.document.createTextNode(String(text)));
+  };
+
+  // 文档级杂项
+  let cookieJar = "";
+  Object.defineProperty(g.document, "cookie", {
+    configurable: true,
+    get() {
+      return cookieJar;
+    },
+    set(v) {
+      // 只保留 name=value 段,足够让"能写能读"的代码活着
+      const pair = String(v).split(";")[0];
+      cookieJar = cookieJar ? cookieJar + "; " + pair : pair;
+    },
+  });
+  Object.defineProperty(g.document, "activeElement", {
+    configurable: true,
+    get() {
+      return g.document.body;
+    },
+  });
+  Object.defineProperty(g.document, "currentScript", {
+    configurable: true,
+    get() {
+      return null;
+    },
+  });
+  g.document.hasFocus = () => true;
+  g.document.createRange = function () {
+    return {
+      setStart() {}, setEnd() {}, collapse() {},
+      selectNode() {}, selectNodeContents() {},
+      deleteContents() {}, extractContents() {}, cloneContents() {},
+      insertNode() {}, getBoundingClientRect: zeroRect,
+      getClientRects() { return []; },
+      createContextualFragment(html) {
+        const host = g.document.createElement("div");
+        host.innerHTML = html;
+        const frag = g.document.createDocumentFragment();
+        for (const n of [...host.childNodes]) frag.appendChild(n);
+        return frag;
+      },
+      commonAncestorContainer: g.document.body,
+    };
+  };
+  g.getSelection = () => ({
+    rangeCount: 0,
+    addRange() {}, removeAllRanges() {}, getRangeAt() { return null; },
+    toString() { return ""; },
+  });
+
+  // 视口与滚动:固定 1280x720,滚动是 no-op
+  g.innerWidth = 1280;
+  g.innerHeight = 720;
+  g.outerWidth = 1280;
+  g.outerHeight = 720;
+  g.devicePixelRatio = 1;
+  g.scrollX = 0;
+  g.scrollY = 0;
+  g.pageXOffset = 0;
+  g.pageYOffset = 0;
+  g.scrollTo = function () {};
+  g.scrollBy = function () {};
+  g.scroll = function () {};
+  g.screen = { width: 1280, height: 720, availWidth: 1280, availHeight: 720, colorDepth: 24, pixelDepth: 24 };
+  g.alert = function () {};
+  g.confirm = function () {
+    return false;
+  };
+  g.prompt = function () {
+    return null;
+  };
+  g.open = function () {
+    return null;
+  };
+  g.CSS = {
+    supports() {
+      return false;
+    },
+    escape(s) {
+      return String(s).replace(/[^a-zA-Z0-9_ -￿-]/g, (c) => "\\" + c);
+    },
+  };
+
+  // base64(纯 JS;QuickJS 无 atob/btoa)
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  g.btoa = function (input) {
+    const s = String(input);
+    let out = "";
+    for (let i = 0; i < s.length; i += 3) {
+      const c1 = s.charCodeAt(i), c2 = s.charCodeAt(i + 1), c3 = s.charCodeAt(i + 2);
+      if (c1 > 255 || c2 > 255 || c3 > 255) throw new Error("btoa: invalid character");
+      const n = (c1 << 16) | ((c2 || 0) << 8) | (c3 || 0);
+      out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63]
+        + (isNaN(c2) ? "=" : B64[(n >> 6) & 63])
+        + (isNaN(c3) ? "=" : B64[n & 63]);
+    }
+    return out;
+  };
+  g.atob = function (input) {
+    const s = String(input).replace(/=+$/, "");
+    let out = "";
+    let buffer = 0, bits = 0;
+    for (const ch of s) {
+      const idx = B64.indexOf(ch);
+      if (idx < 0) continue;
+      buffer = (buffer << 6) | idx;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out += String.fromCharCode((buffer >> bits) & 255);
+      }
+    }
+    return out;
+  };
+
+  // TextEncoder/TextDecoder(UTF-8,纯 JS)
+  class TextEncoder {
+    get encoding() {
+      return "utf-8";
+    }
+    encode(input) {
+      const s = String(input ?? "");
+      const bytes = [];
+      for (const ch of s) {
+        const cp = ch.codePointAt(0);
+        if (cp < 0x80) bytes.push(cp);
+        else if (cp < 0x800) bytes.push(0xc0 | (cp >> 6), 0x80 | (cp & 63));
+        else if (cp < 0x10000) bytes.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+        else bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+      }
+      return new Uint8Array(bytes);
+    }
+  }
+  class TextDecoder {
+    get encoding() {
+      return "utf-8";
+    }
+    decode(input) {
+      if (input == null) return "";
+      const bytes = input instanceof Uint8Array ? input : new Uint8Array(input.buffer || input);
+      let out = "";
+      let i = 0;
+      while (i < bytes.length) {
+        const b = bytes[i++];
+        let cp;
+        if (b < 0x80) cp = b;
+        else if (b < 0xe0) cp = ((b & 31) << 6) | (bytes[i++] & 63);
+        else if (b < 0xf0) cp = ((b & 15) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
+        else cp = ((b & 7) << 18) | ((bytes[i++] & 63) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
+        out += String.fromCodePoint(cp);
+      }
+      return out;
+    }
+  }
+  g.TextEncoder = TextEncoder;
+  g.TextDecoder = TextDecoder;
+
+  class AbortSignal extends EventTarget {
+    constructor() {
+      super();
+      this.aborted = false;
+      this.reason = undefined;
+      this.onabort = null;
+    }
+    throwIfAborted() {
+      if (this.aborted) throw this.reason;
+    }
+    static abort(reason) {
+      const s = new AbortSignal();
+      s.aborted = true;
+      s.reason = reason;
+      return s;
+    }
+    static timeout() {
+      return new AbortSignal();
+    }
+  }
+  class AbortController {
+    constructor() {
+      this.signal = new AbortSignal();
+    }
+    abort(reason) {
+      if (this.signal.aborted) return;
+      this.signal.aborted = true;
+      this.signal.reason = reason === undefined ? new Error("AbortError") : reason;
+      const ev = new Event("abort");
+      this.signal.dispatchEvent(ev);
+      if (typeof this.signal.onabort === "function") this.signal.onabort(ev);
+    }
+  }
+  g.AbortSignal = AbortSignal;
+  g.AbortController = AbortController;
+
+  g.structuredClone = function (value) {
+    return JSON.parse(JSON.stringify(value));
+  };
+
+  // 确定性 crypto:xorshift32 固定种子——可复现是产品契约,别换成真随机
+  let rngState = 0x5f375a86;
+  function nextByte() {
+    rngState ^= rngState << 13;
+    rngState ^= rngState >>> 17;
+    rngState ^= rngState << 5;
+    rngState >>>= 0;
+    return rngState & 255;
+  }
+  g.crypto = {
+    getRandomValues(arr) {
+      for (let i = 0; i < arr.length; i++) arr[i] = nextByte();
+      return arr;
+    },
+    randomUUID() {
+      const hex = [];
+      for (let i = 0; i < 16; i++) hex.push(nextByte().toString(16).padStart(2, "0"));
+      return (
+        hex.slice(0, 4).join("") + "-" + hex.slice(4, 6).join("") + "-" +
+        hex.slice(6, 8).join("") + "-" + hex.slice(8, 10).join("") + "-" +
+        hex.slice(10, 16).join("")
+      );
+    },
+    subtle: undefined,
+  };
+
+  class DOMImplementation {
+    createHTMLDocument() {
+      return g.document;
+    }
+    hasFeature() {
+      return true;
+    }
+  }
+  Object.defineProperty(g.document, "implementation", {
+    configurable: true,
+    get() {
+      return new DOMImplementation();
+    },
+  });
+
   // ---- 模块评估的失败跟踪(宿主在 load 结束时取走)----
   g.__surl_moduleFailures = [];
   Object.defineProperty(g, "__surl_trackModule", {

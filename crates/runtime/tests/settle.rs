@@ -406,3 +406,70 @@ async fn missing_module_reports_but_page_survives() {
     assert!(!report.modules.prefetch_errors.is_empty() || !report.modules.errors.is_empty());
     rt.eval("if (!globalThis.classicRan) throw new Error('classic script skipped')").unwrap();
 }
+#[tokio::test]
+async fn environment_veneer_surfaces() {
+    let rt = PageRuntime::with_base(parse_html("<!doctype html><div id=x></div>"), Some(base())).unwrap();
+    rt.eval(
+        r#"
+        localStorage.setItem("k", "v");
+        if (localStorage.getItem("k") !== "v") throw new Error("storage");
+        if (matchMedia("(prefers-color-scheme: dark)").matches !== false) throw new Error("matchMedia");
+        new IntersectionObserver(() => {}).observe(document.body);
+        new MutationObserver(() => {}).observe(document.body, { childList: true });
+        if (getComputedStyle(document.body).getPropertyValue("color") !== "") throw new Error("gcs");
+        const r = document.getElementById("x").getBoundingClientRect();
+        if (r.width !== 0 || r.top !== 0) throw new Error("rect");
+
+        const el = document.getElementById("x");
+        el.dataset.userId = "42";
+        if (el.getAttribute("data-user-id") !== "42") throw new Error("dataset write");
+        if (el.dataset.userId !== "42") throw new Error("dataset read");
+        el.tabIndex = 3;
+        if (el.getAttribute("tabindex") !== "3") throw new Error("tabIndex");
+        if (!el.isConnected) throw new Error("isConnected");
+
+        const input = document.createElement("input");
+        input.value = "typed";
+        if (input.getAttribute("value") !== "typed") throw new Error("value prop");
+        input.checked = true;
+        if (!input.hasAttribute("checked")) throw new Error("checked prop");
+
+        el.insertAdjacentHTML("beforeend", "<em>adj</em>");
+        if (!el.innerHTML.includes("<em>adj</em>")) throw new Error("insertAdjacentHTML");
+        el.append("txt", document.createElement("b"));
+        if (el.childNodes.length !== 3) throw new Error("append");
+
+        if (btoa("hi") !== "aGk=") throw new Error("btoa: " + btoa("hi"));
+        if (atob("aGk=") !== "hi") throw new Error("atob");
+        const enc = new TextEncoder().encode("héllo");
+        if (enc.length !== 6) throw new Error("TextEncoder len " + enc.length);
+        if (new TextDecoder().decode(enc) !== "héllo") throw new Error("TextDecoder");
+
+        const ac = new AbortController();
+        let aborted = false;
+        ac.signal.addEventListener("abort", () => { aborted = true; });
+        ac.abort();
+        if (!aborted || !ac.signal.aborted) throw new Error("abort");
+
+        const u1 = crypto.randomUUID();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(u1)) throw new Error("uuid: " + u1);
+        document.cookie = "a=1; path=/";
+        if (document.cookie !== "a=1") throw new Error("cookie: " + document.cookie);
+    "#,
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn crypto_is_deterministic_across_runs() {
+    let uuid = |_: ()| async {
+        let rt = PageRuntime::new(parse_html("<!doctype html>")).unwrap();
+        rt.eval("globalThis.u = crypto.randomUUID()").unwrap();
+        rt.console_messages();
+        rt.eval("console.log(u)").unwrap();
+        rt.console_messages().last().unwrap().message.clone()
+    };
+    let a = uuid(()).await;
+    let b = uuid(()).await;
+    assert_eq!(a, b, "randomUUID must be deterministic across runs");
+}
