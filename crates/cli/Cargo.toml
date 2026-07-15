@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 surl-core.workspace = true
 surl-dom.workspace = true
+surl-runtime.workspace = true
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true

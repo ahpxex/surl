@@ -1,0 +1,20 @@
+document "MicroApp"
+  banner
+    heading[1] "MicroApp"
+    navigation "Primary"
+      list
+        listitem
+          link "Home" -> /
+        listitem
+          link "Blog" -> /blog
+        listitem
+          link "Join our Discord" -> https://discord.gg/microapp
+  main
+    heading[2] "Latest posts"
+    list
+      listitem
+        link "Post one" -> /p/1
+      listitem
+        link "Post two" -> /p/2
+  contentinfo
+    text "rendered at DOMContentLoaded"

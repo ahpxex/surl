@@ -106,6 +106,14 @@ fn spa_shell_is_honestly_empty() {
 }
 
 #[test]
+fn no_js_flag_shows_raw_structure() {
+    // 与 spa-vanilla.tree(JS 执行后的丰满结构)对照:--no-js 是空壳
+    let fixture = fixtures_dir().join("spa-vanilla.html");
+    let out = run_ok(&[fixture.to_str().unwrap(), "--no-js"], None);
+    assert_eq!(out, "document \"MicroApp\"\n");
+}
+
+#[test]
 fn rejects_nonexistent_input() {
     let out = surl()
         .arg("/definitely/not/a/file.html")

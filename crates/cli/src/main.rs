@@ -21,6 +21,10 @@ struct Args {
     /// 完整语义 IR(JSON)
     #[arg(long, group = "mode")]
     json: bool,
+
+    /// 不执行页面 JS(只看服务器返回的原始结构)
+    #[arg(long)]
+    no_js: bool,
 }
 
 #[tokio::main]
@@ -33,7 +37,19 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let (html, base) = load(&args.input).await?;
 
-    let doc = surl_dom::parse_html(&html);
+    let mut doc = surl_dom::parse_html(&html);
+    if !args.no_js {
+        let rt = surl_runtime::PageRuntime::new(doc)?;
+        let report = rt.run_scripts()?;
+        tracing::debug!(
+            executed = report.executed,
+            skipped_external = report.skipped_external,
+            skipped_module = report.skipped_module,
+            errors = report.errors.len(),
+            "page scripts done"
+        );
+        doc = rt.take_document();
+    }
 
     if args.dom {
         // 精确字节输出,不加尾换行:保证 --dom 的输出可以无损地再喂回来

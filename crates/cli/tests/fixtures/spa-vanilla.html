@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>MicroApp</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    // 一个不依赖框架的 SPA:整个 UI 由 JS 构建。
+    // M0 时代 surl 只能看到空壳;M1 起必须看到完整结构。
+    const app = document.getElementById("app");
+
+    const header = document.createElement("header");
+    const h1 = document.createElement("h1");
+    h1.textContent = "MicroApp";
+    header.appendChild(h1);
+
+    const nav = document.createElement("nav");
+    nav.setAttribute("aria-label", "Primary");
+    const links = [
+      ["Home", "/"],
+      ["Blog", "/blog"],
+      ["Join our Discord", "https://discord.gg/microapp"],
+    ];
+    const ul = document.createElement("ul");
+    for (const [label, href] of links) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.setAttribute("href", href);
+      a.textContent = label;
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    nav.appendChild(ul);
+    header.appendChild(nav);
+    app.appendChild(header);
+
+    const main = document.createElement("main");
+    main.innerHTML = "<h2>Latest posts</h2><ul><li><a href='/p/1'>Post one</a></li><li><a href='/p/2'>Post two</a></li></ul>";
+    app.appendChild(main);
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const footer = document.createElement("footer");
+      footer.textContent = "rendered at DOMContentLoaded";
+      app.appendChild(footer);
+    });
+  </script>
+</body>
+</html>
