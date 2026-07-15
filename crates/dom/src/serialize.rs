@@ -72,6 +72,21 @@ impl Document {
         self.serialize_subtree(self.root())
     }
 
+    /// innerHTML getter:只序列化孩子,不含节点自身。
+    pub fn inner_html(&self, id: NodeId) -> String {
+        let mut buf = Vec::new();
+        html5ever::serialize(
+            &mut buf,
+            &SerializableNode { doc: self, id },
+            SerializeOpts {
+                traversal_scope: TraversalScope::ChildrenOnly(None),
+                ..Default::default()
+            },
+        )
+        .expect("serialize to Vec cannot fail");
+        String::from_utf8(buf).expect("serializer emits valid utf-8")
+    }
+
     /// 序列化某节点。元素节点含自身(outerHTML 语义),容器根只序列化孩子。
     pub fn serialize_subtree(&self, id: NodeId) -> String {
         let traversal_scope = match self.node(id).data {

@@ -255,6 +255,73 @@ impl Document {
         })
     }
 
+    /// 深拷贝本文档内的一棵子树(含 template contents),返回新根。
+    /// 新子树是游离的(无父节点)。
+    pub fn clone_subtree(&mut self, node: NodeId) -> NodeId {
+        let (data, children) = {
+            let n = self.node(node);
+            (self.duplicate_data(&n.data), n.children.clone())
+        };
+        let new = self.create_node(data);
+        // template contents 也要深拷贝(duplicate_data 里只留了 None)
+        if let NodeData::Element(el) = &self.node(node).data
+            && let Some(contents) = el.template_contents
+        {
+            let new_contents = self.clone_subtree(contents);
+            if let Some(el) = self.element_mut(new) {
+                el.template_contents = Some(new_contents);
+            }
+        }
+        for child in children {
+            let c = self.clone_subtree(child);
+            self.append_child(new, c);
+        }
+        new
+    }
+
+    /// 从另一棵文档树深拷贝子树进来(innerHTML 的片段移植)。
+    pub fn import_subtree(&mut self, src: &Document, node: NodeId) -> NodeId {
+        let data = self.duplicate_data(&src.node(node).data);
+        let new = self.create_node(data);
+        if let NodeData::Element(el) = &src.node(node).data
+            && let Some(contents) = el.template_contents
+        {
+            let new_contents = self.import_subtree(src, contents);
+            if let Some(el) = self.element_mut(new) {
+                el.template_contents = Some(new_contents);
+            }
+        }
+        for &child in &src.node(node).children {
+            let c = self.import_subtree(src, child);
+            self.append_child(new, c);
+        }
+        new
+    }
+
+    /// 复制节点数据(template_contents 置空,由调用方另行深拷贝)。
+    fn duplicate_data(&self, data: &NodeData) -> NodeData {
+        match data {
+            NodeData::Document => NodeData::Document,
+            NodeData::Fragment => NodeData::Fragment,
+            NodeData::Doctype { name } => NodeData::Doctype { name: name.clone() },
+            NodeData::Text { contents } => NodeData::Text {
+                contents: contents.clone(),
+            },
+            NodeData::Comment { contents } => NodeData::Comment {
+                contents: contents.clone(),
+            },
+            NodeData::ProcessingInstruction { target, data } => NodeData::ProcessingInstruction {
+                target: target.clone(),
+                data: data.clone(),
+            },
+            NodeData::Element(el) => NodeData::Element(ElementData {
+                name: el.name.clone(),
+                attrs: el.attrs.clone(),
+                template_contents: None,
+            }),
+        }
+    }
+
     /// 子树内所有文本节点内容拼接(近似 DOM textContent)。
     pub fn text_content(&self, id: NodeId) -> String {
         let mut out = String::new();

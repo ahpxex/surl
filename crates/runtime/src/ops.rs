@@ -112,6 +112,52 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                 .create_node(NodeData::Comment { contents: text }))
         });
     }
+    {
+        let dom = dom.clone();
+        op!("createFragment", move || {
+            fid(dom.borrow_mut().create_node(NodeData::Fragment))
+        });
+    }
+    {
+        let dom = dom.clone();
+        op!("createElementNS", move |ns_url: String, tag: String| {
+            let ns = surl_dom::Namespace::from(ns_url);
+            // 非 HTML 命名空间保留大小写(SVG 的 viewBox 等)
+            let name = QualName::new(None, ns, LocalName::from(tag));
+            fid(dom
+                .borrow_mut()
+                .create_node(NodeData::Element(surl_dom::ElementData {
+                    name,
+                    attrs: Vec::new(),
+                    template_contents: None,
+                })))
+        });
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "cloneNode",
+            move |ctx: Ctx<'_>, id: f64, deep: bool| -> Result<f64> {
+                let mut doc = dom.borrow_mut();
+                let id = nid(&ctx, &doc, id)?;
+                if deep {
+                    return Ok(fid(doc.clone_subtree(id)));
+                }
+                let shallow = {
+                    let children_backup: Vec<NodeId> = doc.node(id).children.clone();
+                    let cloned = doc.clone_subtree(id);
+                    // 浅拷贝:把深拷贝的孩子拆掉(实现简单,页面脚本不在热路径)
+                    let _ = children_backup;
+                    let cloned_children: Vec<NodeId> = doc.node(cloned).children.clone();
+                    for c in cloned_children {
+                        doc.detach(c);
+                    }
+                    cloned
+                };
+                Ok(fid(shallow))
+            }
+        );
+    }
 
     // ---- 结构读取 ----
     {
@@ -200,7 +246,12 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                 let parent = nid(&ctx, &doc, parent)?;
                 let child = nid(&ctx, &doc, child)?;
                 check_hierarchy(&ctx, &doc, parent, child)?;
-                doc.append_child(parent, child);
+                // DocumentFragment:移动其孩子,fragment 本身留空(DOM 语义)
+                if matches!(doc.node(child).data, NodeData::Fragment) {
+                    doc.reparent_children(child, parent);
+                } else {
+                    doc.append_child(parent, child);
+                }
                 Ok(())
             }
         );
@@ -214,8 +265,13 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                 let parent = nid(&ctx, &doc, parent)?;
                 let node = nid(&ctx, &doc, node)?;
                 check_hierarchy(&ctx, &doc, parent, node)?;
+                let is_fragment = matches!(doc.node(node).data, NodeData::Fragment);
                 if reference == NULL_ID {
-                    doc.append_child(parent, node);
+                    if is_fragment {
+                        doc.reparent_children(node, parent);
+                    } else {
+                        doc.append_child(parent, node);
+                    }
                     return Ok(());
                 }
                 let reference = nid(&ctx, &doc, reference)?;
@@ -225,7 +281,15 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                         "NotFoundError: reference node is not a child of parent",
                     ));
                 }
-                doc.insert_before(reference, node);
+                if is_fragment {
+                    let children: Vec<NodeId> = doc.node(node).children.clone();
+                    for c in children {
+                        doc.detach(c);
+                        doc.insert_before(reference, c);
+                    }
+                } else {
+                    doc.insert_before(reference, node);
+                }
                 Ok(())
             }
         );
@@ -391,6 +455,78 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                     }
                     _ => Err(Exception::throw_type(&ctx, "setNodeValue on non-CharacterData")),
                 }
+            }
+        );
+    }
+
+    // ---- 选择器 ----
+    {
+        let dom = dom.clone();
+        op!(
+            "querySelector",
+            move |ctx: Ctx<'_>, scope: f64, sel: String| -> Result<f64> {
+                let doc = dom.borrow();
+                let scope = nid(&ctx, &doc, scope)?;
+                match doc.query_selector(scope, &sel) {
+                    Ok(hit) => Ok(opt_fid(hit)),
+                    Err(e) => Err(Exception::throw_syntax(&ctx, &e.to_string())),
+                }
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "querySelectorAll",
+            move |ctx: Ctx<'_>, scope: f64, sel: String| -> Result<Vec<f64>> {
+                let doc = dom.borrow();
+                let scope = nid(&ctx, &doc, scope)?;
+                match doc.query_selector_all(scope, &sel) {
+                    Ok(hits) => Ok(hits.into_iter().map(fid).collect()),
+                    Err(e) => Err(Exception::throw_syntax(&ctx, &e.to_string())),
+                }
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "matches",
+            move |ctx: Ctx<'_>, id: f64, sel: String| -> Result<bool> {
+                let doc = dom.borrow();
+                let id = nid(&ctx, &doc, id)?;
+                doc.element_matches(id, &sel)
+                    .map_err(|e| Exception::throw_syntax(&ctx, &e.to_string()))
+            }
+        );
+    }
+
+    // ---- innerHTML / outerHTML ----
+    {
+        let dom = dom.clone();
+        op!("innerHTML", move |ctx: Ctx<'_>, id: f64| -> Result<String> {
+            let doc = dom.borrow();
+            let id = nid(&ctx, &doc, id)?;
+            Ok(doc.inner_html(id))
+        });
+    }
+    {
+        let dom = dom.clone();
+        op!("outerHTML", move |ctx: Ctx<'_>, id: f64| -> Result<String> {
+            let doc = dom.borrow();
+            let id = nid(&ctx, &doc, id)?;
+            Ok(doc.serialize_subtree(id))
+        });
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "setInnerHTML",
+            move |ctx: Ctx<'_>, id: f64, html: String| -> Result<()> {
+                let mut doc = dom.borrow_mut();
+                let id = nid(&ctx, &doc, id)?;
+                doc.set_inner_html(id, &html);
+                Ok(())
             }
         );
     }

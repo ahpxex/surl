@@ -14,4 +14,4 @@ pub use tree::{Attr, Document, ElementData, Node, NodeData, NodeId};
 
 // 下游 crate(语义提取、JS 绑定)需要用到的 html5ever 名字类型,统一从这里走,
 // 避免各 crate 直接依赖 html5ever 造成版本漂移。
-pub use html5ever::{LocalName, QualName, local_name, ns};
+pub use html5ever::{LocalName, Namespace, QualName, local_name, ns};

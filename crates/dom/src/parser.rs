@@ -39,6 +39,25 @@ pub fn parse_fragment(html: &str, context: &str) -> (Document, NodeId) {
     (doc, fragment)
 }
 
+impl Document {
+    /// innerHTML setter:在 target 元素的语境下重入解析 html,替换其全部孩子。
+    pub fn set_inner_html(&mut self, target: NodeId, html: &str) {
+        let context = match self.element(target) {
+            Some(el) => el.local_name().to_string(),
+            None => "body".to_owned(),
+        };
+        let (frag_doc, frag_root) = parse_fragment(html, &context);
+        let old = self.node(target).children.clone();
+        for child in old {
+            self.detach(child);
+        }
+        for &child in &frag_doc.node(frag_root).children {
+            let imported = self.import_subtree(&frag_doc, child);
+            self.append_child(target, imported);
+        }
+    }
+}
+
 pub struct Sink {
     doc: RefCell<Document>,
 }
@@ -307,5 +326,42 @@ mod tests {
         let lis: Vec<_> = doc.node(frag).children.clone();
         assert_eq!(lis.len(), 2);
         assert_eq!(doc.text_content(frag), "ab");
+    }
+
+    #[test]
+    fn set_inner_html_replaces_children() {
+        let mut doc = parse_html(r#"<!doctype html><div id="x"><p>old</p></div>"#);
+        let x = doc.query_selector(doc.root(), "#x").unwrap().unwrap();
+        doc.set_inner_html(x, "<em>new</em> text <b>bold</b>");
+        assert_eq!(
+            doc.serialize_subtree(x),
+            r#"<div id="x"><em>new</em> text <b>bold</b></div>"#
+        );
+        assert_eq!(doc.inner_html(x), "<em>new</em> text <b>bold</b>");
+    }
+
+    #[test]
+    fn set_inner_html_is_context_aware() {
+        // <tr> 只能在 table 语境下解析出来
+        let mut doc = parse_html("<!doctype html><table><tbody id=b></tbody></table>");
+        let b = doc.query_selector(doc.root(), "#b").unwrap().unwrap();
+        doc.set_inner_html(b, "<tr><td>cell</td></tr>");
+        assert!(doc.inner_html(b).contains("<tr><td>cell</td></tr>"));
+    }
+
+    #[test]
+    fn clone_subtree_deep_and_detached() {
+        let mut doc = parse_html(r#"<!doctype html><div id="a"><span class="s">x</span></div>"#);
+        let a = doc.query_selector(doc.root(), "#a").unwrap().unwrap();
+        let copy = doc.clone_subtree(a);
+        assert_eq!(doc.node(copy).parent, None);
+        assert_eq!(
+            doc.serialize_subtree(copy),
+            r#"<div id="a"><span class="s">x</span></div>"#
+        );
+        // 拷贝是独立的:改原树不影响副本
+        let span = doc.query_selector(a, "span").unwrap().unwrap();
+        doc.detach(span);
+        assert!(doc.serialize_subtree(copy).contains("span"));
     }
 }
