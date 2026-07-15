@@ -10,9 +10,14 @@ license = "MIT"
 [workspace.dependencies]
 # 内部 crate
 surl-core = { path = "crates/core" }
+surl-dom = { path = "crates/dom" }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+
+# HTML 解析与 DOM
+html5ever = "0.39"
+slotmap = "1"
 
 # 异步与网络
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
