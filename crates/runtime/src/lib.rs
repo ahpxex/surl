@@ -5,6 +5,7 @@
 //! 的包装类访问 DOM,手里只有数字句柄——没有跨 GC 边界的对象图。
 
 pub mod event_loop;
+pub mod modules;
 pub mod net;
 mod ops;
 
@@ -13,7 +14,7 @@ use std::rc::Rc;
 
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
-use rquickjs::{CatchResultExt, CaughtError, Context, Function, Runtime};
+use rquickjs::{CatchResultExt, CaughtError, Context, FromJs, Function, Runtime};
 use surl_dom::Document;
 use thiserror::Error;
 
@@ -74,15 +75,33 @@ pub struct SettleReport {
 }
 
 #[derive(Debug, Default)]
+pub struct ModuleReport {
+    /// 预取进缓存的模块数
+    pub prefetched: usize,
+    /// 成功启动评估的入口数
+    pub evaluated: usize,
+    pub prefetch_errors: Vec<String>,
+    /// 评估失败 + 模块 promise 拒绝
+    pub errors: Vec<String>,
+    /// 运行期动态 import 没命中缓存的 URL
+    pub runtime_misses: Vec<String>,
+}
+
+#[derive(Debug, Default)]
 pub struct LoadReport {
     pub scripts: ScriptReport,
+    pub modules: ModuleReport,
     pub settle: SettleReport,
 }
 
 enum Script {
     Inline(String),
     External(String),
-    Module,
+    /// type=module:src 外链或内联源码
+    Module {
+        src: Option<String>,
+        source: String,
+    },
 }
 
 /// 按文档序收集 `<script>`:内联 classic 取源码,src/module 只记类型。
@@ -96,7 +115,10 @@ fn collect_scripts(doc: &Document) -> Vec<Script> {
             let el = doc.element(n).expect("filtered to elements");
             let kind = el.attr("type").unwrap_or("").trim().to_ascii_lowercase();
             match kind.as_str() {
-                "module" => Some(Script::Module),
+                "module" => Some(Script::Module {
+                    src: el.attr("src").map(str::to_owned),
+                    source: doc.text_content(n),
+                }),
                 "" | "text/javascript" | "application/javascript" => {
                     match el.attr("src") {
                         Some(src) => Some(Script::External(src.to_owned())),
@@ -119,6 +141,8 @@ pub struct PageRuntime {
     console: ops::ConsoleSink,
     event_loop: ops::SharedEventLoop,
     base: Option<url::Url>,
+    module_sources: modules::SourceCache,
+    module_misses: modules::MissLog,
 }
 
 impl PageRuntime {
@@ -147,6 +171,16 @@ impl PageRuntime {
             Ok(())
         })?;
 
+        let module_sources: modules::SourceCache = Rc::new(RefCell::new(Default::default()));
+        let module_misses: modules::MissLog = Rc::new(RefCell::new(Vec::new()));
+        rt.set_loader(
+            modules::UrlResolver,
+            modules::CacheLoader {
+                sources: module_sources.clone(),
+                misses: module_misses.clone(),
+            },
+        );
+
         Ok(PageRuntime {
             ctx,
             rt,
@@ -154,6 +188,8 @@ impl PageRuntime {
             console,
             event_loop,
             base,
+            module_sources,
+            module_misses,
         })
     }
 
@@ -195,8 +231,8 @@ impl PageRuntime {
                     tracing::warn!(target: "surl_js", "run_scripts skips external script: {src}");
                     report.skipped_external += 1;
                 }
-                Script::Module => {
-                    tracing::warn!(target: "surl_js", "skipping module script (M3)");
+                Script::Module { .. } => {
+                    tracing::warn!(target: "surl_js", "run_scripts skips module script (use load)");
                     report.skipped_module += 1;
                 }
             }
@@ -222,6 +258,8 @@ impl PageRuntime {
             let doc = self.dom.borrow();
             collect_scripts(&doc)
         };
+        // 第一遍:classic script(同步阻塞语义,文档序)
+        let mut module_scripts: Vec<Script> = Vec::new();
         for script in scripts {
             match script {
                 Script::Inline(source) => self.eval_page_script(&source, &mut report.scripts),
@@ -252,16 +290,119 @@ impl PageRuntime {
                     }
                     self.pump_jobs()?;
                 }
-                Script::Module => {
-                    tracing::warn!(target: "surl_js", "skipping module script (M3)");
-                    report.scripts.skipped_module += 1;
+                module @ Script::Module { .. } => module_scripts.push(module),
+            }
+        }
+
+        // 第二遍:module script(defer 语义——classic 全部跑完后执行)
+        if !module_scripts.is_empty() {
+            // 预取整张模块图:入口 src + 内联源码里的说明符
+            let mut entries: Vec<String> = Vec::new();
+            for script in &module_scripts {
+                if let Script::Module { src, source } = script {
+                    match src {
+                        Some(src) => entries.push(self.resolve_url(src)),
+                        None => {
+                            for spec in modules::scan_specifiers(source) {
+                                if let Some(abs) =
+                                    modules::resolve_specifier(&self.inline_module_name(), &spec)
+                                {
+                                    entries.push(abs);
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+            let (loaded, prefetch_errors) =
+                modules::prefetch_graph(net, &self.module_sources, &entries).await;
+            report.modules.prefetched = loaded;
+            report.modules.prefetch_errors = prefetch_errors;
+
+            for (idx, script) in module_scripts.iter().enumerate() {
+                let Script::Module { src, source } = script else {
+                    unreachable!()
+                };
+                let result = match src {
+                    Some(src) => {
+                        let abs = self.resolve_url(src);
+                        self.import_module(&abs)
+                    }
+                    None => {
+                        let name = format!("{}#inline-module-{idx}", self.inline_module_name());
+                        self.evaluate_inline_module(&name, source)
+                    }
+                };
+                match result {
+                    Ok(()) => report.modules.evaluated += 1,
+                    Err(e) => {
+                        tracing::warn!(target: "surl_js", "module error: {e}");
+                        report.modules.errors.push(e.to_string());
+                    }
+                }
+                self.pump_jobs()?;
             }
         }
 
         self.eval("__surl_fireReady()")?;
         self.settle_into(net, &opts, &mut report.settle).await?;
+
+        // 运行期动态 import 的 miss 与模块 promise 的拒绝,一并入报告
+        report.modules.runtime_misses = self.module_misses.borrow().clone();
+        report.modules.errors.extend(self.take_module_failures()?);
         Ok(report)
+    }
+
+    /// 以 loader 路径导入模块(入口有绝对 URL 的情形)。
+    fn import_module(&self, url: &str) -> Result<(), RuntimeError> {
+        self.ctx.with(|ctx| {
+            let result: Result<(), rquickjs::Error> = (|| {
+                let promise = rquickjs::Module::import(&ctx, url)?;
+                let track: Function = ctx.globals().get("__surl_trackModule")?;
+                track.call((promise,))
+            })();
+            result
+                .catch(&ctx)
+                .map_err(|caught| caught_to_error(caught, url))
+        })
+    }
+
+    /// 内联 module:直接以合成名评估源码,其 import 仍走 loader。
+    fn evaluate_inline_module(&self, name: &str, source: &str) -> Result<(), RuntimeError> {
+        self.ctx.with(|ctx| {
+            let result: Result<(), rquickjs::Error> = (|| {
+                let module = rquickjs::Module::declare(ctx.clone(), name, source)?;
+                module.meta()?.set("url", name)?;
+                let (_evaluated, promise) = module.eval()?;
+                let track: Function = ctx.globals().get("__surl_trackModule")?;
+                track.call((promise,))
+            })();
+            result
+                .catch(&ctx)
+                .map_err(|caught| caught_to_error(caught, name))
+        })
+    }
+
+    /// 收集 JS 侧记录的模块 promise 拒绝。
+    fn take_module_failures(&self) -> Result<Vec<String>, RuntimeError> {
+        self.ctx.with(|ctx| {
+            let failures: Vec<String> = ctx
+                .globals()
+                .get::<_, rquickjs::Value>("__surl_moduleFailures")
+                .ok()
+                .and_then(|v| Vec::<String>::from_js(&ctx, v).ok())
+                .unwrap_or_default();
+            let _ = ctx.globals().set("__surl_moduleFailures", Vec::<String>::new());
+            Ok(failures)
+        })
+    }
+
+    /// 内联模块的基准名:有 base 用 base,否则用一个稳定的假 URL。
+    fn inline_module_name(&self) -> String {
+        self.base
+            .as_ref()
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "https://surl.invalid/".to_owned())
     }
 
     /// 事件循环跑到静止。可单独调用(比如 eval 一段代码后收尾)。

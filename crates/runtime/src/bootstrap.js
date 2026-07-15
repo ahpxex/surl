@@ -802,6 +802,19 @@
     },
   });
 
+  // ---- 模块评估的失败跟踪(宿主在 load 结束时取走)----
+  g.__surl_moduleFailures = [];
+  Object.defineProperty(g, "__surl_trackModule", {
+    enumerable: false,
+    value: function (promise) {
+      if (promise && typeof promise.catch === "function") {
+        promise.catch((e) => {
+          __surl_moduleFailures.push(String((e && (e.message || e.stack)) || e));
+        });
+      }
+    },
+  });
+
   function stringify(value) {
     if (typeof value === "string") return value;
     if (value instanceof Node) return "[object " + value.constructor.name + "]";

@@ -302,3 +302,107 @@ async fn location_and_url_are_available() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn module_graph_static_imports() {
+    let net = MockNet::default()
+        .route(
+            "https://app.test/assets/index.js",
+            200,
+            r#"import { render } from "./render.js";
+               import "./side.js";
+               render("from-module");"#,
+        )
+        .route(
+            "https://app.test/assets/render.js",
+            200,
+            r#"import { h1 } from "../lib/h.js";
+               export function render(text) { document.body.appendChild(h1(text)); }"#,
+        )
+        .route(
+            "https://app.test/lib/h.js",
+            200,
+            r#"export function h1(text) {
+                 const el = document.createElement("h1");
+                 el.textContent = text;
+                 return el;
+               }"#,
+        )
+        .route("https://app.test/assets/side.js", 200, "globalThis.sideRan = true;");
+    let rt = PageRuntime::with_base(
+        parse_html(r#"<!doctype html><script type="module" src="/assets/index.js"></script>"#),
+        Some(base()),
+    )
+    .unwrap();
+    let report = rt.load(&net, SettleOptions::default()).await.unwrap();
+    assert_eq!(report.modules.prefetched, 4, "{:?}", report.modules);
+    assert_eq!(report.modules.evaluated, 1);
+    assert!(report.modules.errors.is_empty(), "{:?}", report.modules.errors);
+    rt.eval("if (!globalThis.sideRan) throw new Error('side-effect import missing')").unwrap();
+    assert!(rt.document().to_html().contains("<h1>from-module</h1>"));
+}
+
+#[tokio::test]
+async fn module_dynamic_import_and_meta_url() {
+    let net = MockNet::default()
+        .route(
+            "https://app.test/main.js",
+            200,
+            r#"globalThis.metaUrl = import.meta.url;
+               import("./lazy.js").then((m) => m.go());"#,
+        )
+        .route(
+            "https://app.test/lazy.js",
+            200,
+            r#"export function go() { document.body.textContent = "lazy loaded"; }"#,
+        );
+    let rt = PageRuntime::with_base(
+        parse_html(r#"<!doctype html><script type="module" src="/main.js"></script>"#),
+        Some(base()),
+    )
+    .unwrap();
+    let report = rt.load(&net, SettleOptions::default()).await.unwrap();
+    assert!(report.modules.errors.is_empty(), "{:?}", report.modules.errors);
+    assert!(report.modules.runtime_misses.is_empty(), "{:?}", report.modules.runtime_misses);
+    rt.eval(r#"if (metaUrl !== "https://app.test/main.js") throw new Error("meta.url: " + metaUrl)"#)
+        .unwrap();
+    assert!(rt.document().to_html().contains("lazy loaded"));
+}
+
+#[tokio::test]
+async fn inline_module_with_import() {
+    let net = MockNet::default().route(
+        "https://app.test/dep.js",
+        200,
+        "export const word = 'inline-module-dep';",
+    );
+    let rt = PageRuntime::with_base(
+        parse_html(concat!(
+            r#"<!doctype html><div id="x"></div>"#,
+            r#"<script type="module">"#,
+            r#"import { word } from "/dep.js";"#,
+            r#"document.getElementById("x").textContent = word;"#,
+            r#"</script>"#,
+        )),
+        Some(base()),
+    )
+    .unwrap();
+    let report = rt.load(&net, SettleOptions::default()).await.unwrap();
+    assert!(report.modules.errors.is_empty(), "{:?}", report.modules.errors);
+    assert!(rt.document().to_html().contains("inline-module-dep"));
+}
+
+#[tokio::test]
+async fn missing_module_reports_but_page_survives() {
+    let rt = PageRuntime::with_base(
+        parse_html(concat!(
+            r#"<!doctype html>"#,
+            r#"<script type="module" src="/gone.js"></script>"#,
+            r#"<script>globalThis.classicRan = true;</script>"#,
+        )),
+        Some(base()),
+    )
+    .unwrap();
+    let report = rt.load(&MockNet::default(), SettleOptions::default()).await.unwrap();
+    assert!(!report.modules.prefetch_errors.is_empty() || !report.modules.errors.is_empty());
+    rt.eval("if (!globalThis.classicRan) throw new Error('classic script skipped')").unwrap();
+}
