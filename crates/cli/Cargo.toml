@@ -1,15 +1,15 @@
 [package]
-name = "spurl"
+name = "surl"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "spurl"
+name = "surl"
 path = "src/main.rs"
 
 [dependencies]
-spurl-core.workspace = true
+surl-core.workspace = true
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true

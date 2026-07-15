@@ -21,7 +21,7 @@ pub struct FetchResult {
 pub async fn fetch(input: &str) -> Result<FetchResult, FetchError> {
     let url = url::Url::parse(input)?;
     let client = reqwest::Client::builder()
-        .user_agent(concat!("spurl/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("surl/", env!("CARGO_PKG_VERSION")))
         .build()?;
     let resp = client.get(url).send().await?;
 

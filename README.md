@@ -1,6 +1,6 @@
-# spurl
+# surl
 
-curl gives you bytes. Browsers give you pixels. **spurl gives you structure.**
+curl gives you bytes. Browsers give you pixels. **surl gives you structure.**
 
 A CLI that takes a SPA's URL and returns the page's real, post-JavaScript
 structure — no Chrome, no Playwright, no browser anywhere. A hand-rolled

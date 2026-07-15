@@ -9,7 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 # 内部 crate
-spurl-core = { path = "crates/core" }
+surl-core = { path = "crates/core" }
 
 # CLI
 clap = { version = "4", features = ["derive"] }

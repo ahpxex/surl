@@ -1,4 +1,4 @@
-//! spurl 引擎核心。
+//! surl 引擎核心。
 //!
 //! 目标形态:URL 进,渲染后的页面结构出,全程无浏览器依赖。
 //! 规划中的分层:fetch(HTTP)→ dom(html5ever 树)→ runtime(QuickJS + Web API)

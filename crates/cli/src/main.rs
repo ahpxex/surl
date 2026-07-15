@@ -1,6 +1,6 @@
 use clap::Parser;
 
-/// curl gives you bytes. Browsers give you pixels. spurl gives you structure.
+/// curl gives you bytes. Browsers give you pixels. surl gives you structure.
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let result = spurl_core::fetch::fetch(&args.url).await?;
+    let result = surl_core::fetch::fetch(&args.url).await?;
 
     eprintln!("→ {}", result.final_url);
     eprintln!("  status: {}", result.status);
