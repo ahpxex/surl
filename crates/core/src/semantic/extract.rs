@@ -224,6 +224,8 @@ impl Extractor<'_> {
             "ul" | "ol" | "menu" => Role::List,
             "li" => Role::ListItem,
             "table" => Role::Table,
+            // caption 的文本已作为 table 的可及名,不再重复成内容节点
+            "caption" => return Skip,
             "tr" => Role::Row,
             "td" => Role::Cell,
             "th" => {

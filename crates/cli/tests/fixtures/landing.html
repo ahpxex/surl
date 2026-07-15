@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Acme — Ship faster</title>
+  <style>.x { color: red }</style>
+  <script>console.log("should not appear")</script>
+</head>
+<body>
+  <header>
+    <img src="/logo.svg" alt="Acme logo">
+    <h1>Acme</h1>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="/features">Features</a></li>
+        <li><a href="/pricing">Pricing</a></li>
+        <li><a href="/docs" title="Read the docs">Docs</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main>
+    <h2>Ship faster with Acme</h2>
+    <p>The all-in-one platform for <a href="https://example.com/teams">teams</a> that move.</p>
+    <section aria-label="Sign up">
+      <h3>Get started</h3>
+      <form>
+        <label for="email">Work email</label>
+        <input id="email" type="email" placeholder="you@company.com">
+        <input type="checkbox" id="tos" checked>
+        <label for="tos">I agree to the terms</label>
+        <button type="submit">Create account</button>
+      </form>
+    </section>
+    <section>
+      <!-- 匿名 section:应被拍平,不产生 region -->
+      <table>
+        <caption>Plans</caption>
+        <tr><th>Plan</th><th>Price</th></tr>
+        <tr><td>Free</td><td>$0</td></tr>
+        <tr><td>Pro</td><td>$19</td></tr>
+      </table>
+    </section>
+    <div hidden><p>secret draft</p></div>
+    <img src="/divider.png" alt="">
+    <hr>
+    <blockquote>It just works. — some CTO</blockquote>
+  </main>
+  <aside aria-label="Newsletter">
+    <p>Subscribe for updates</p>
+  </aside>
+  <footer>
+    <p>© 2026 Acme Inc. <a href="/legal">Legal</a></p>
+  </footer>
+</body>
+</html>

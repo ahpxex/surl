@@ -36,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
     let doc = surl_dom::parse_html(&html);
 
     if args.dom {
+        // 精确字节输出,不加尾换行:保证 --dom 的输出可以无损地再喂回来
         print!("{}", doc.to_html());
-        println!();
         return Ok(());
     }
 

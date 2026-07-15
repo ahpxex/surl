@@ -1,0 +1,46 @@
+document "Acme — Ship faster"
+  banner
+    img "Acme logo"
+    heading[1] "Acme"
+    navigation "Main"
+      list
+        listitem
+          link "Features" -> /features
+        listitem
+          link "Pricing" -> /pricing
+        listitem
+          link "Docs" -> /docs
+  main
+    heading[2] "Ship faster with Acme"
+    paragraph
+      text "The all-in-one platform for"
+      link "teams" -> https://example.com/teams
+      text "that move."
+    region "Sign up"
+      heading[3] "Get started"
+      form
+        text "Work email"
+        textbox "Work email"
+        checkbox "I agree to the terms" (checked)
+        text "I agree to the terms"
+        button "Create account"
+    table "Plans"
+      row
+        columnheader "Plan"
+        columnheader "Price"
+      row
+        cell "Free"
+        cell "$0"
+      row
+        cell "Pro"
+        cell "$19"
+    separator
+    blockquote
+      text "It just works. — some CTO"
+  complementary "Newsletter"
+    paragraph
+      text "Subscribe for updates"
+  contentinfo
+    paragraph
+      text "© 2026 Acme Inc."
+      link "Legal" -> /legal
