@@ -95,9 +95,9 @@ pub struct LoadReport {
 }
 
 enum Script {
-    Inline(String),
-    External(String),
-    /// type=module:src 外链或内联源码
+    Inline(surl_dom::NodeId, String),
+    External(surl_dom::NodeId, String),
+    /// type=module:src 外链或内联源码(module 的 currentScript 是 null,不带节点)
     Module {
         src: Option<String>,
         source: String,
@@ -121,8 +121,8 @@ fn collect_scripts(doc: &Document) -> Vec<Script> {
                 }),
                 "" | "text/javascript" | "application/javascript" => {
                     match el.attr("src") {
-                        Some(src) => Some(Script::External(src.to_owned())),
-                        None => Some(Script::Inline(doc.text_content(n))),
+                        Some(src) => Some(Script::External(n, src.to_owned())),
+                        None => Some(Script::Inline(n, doc.text_content(n))),
                     }
                 }
                 // JSON/模板等非可执行类型
@@ -143,6 +143,10 @@ pub struct PageRuntime {
     base: Option<url::Url>,
     module_sources: modules::SourceCache,
     module_misses: modules::MissLog,
+    /// 单次进入 JS 的墙钟截止时刻;interrupt handler 靠它把死循环
+    /// 变成可捕获的异常。surl 必须永远能终止。
+    exec_deadline: Rc<std::cell::Cell<Option<std::time::Instant>>>,
+    script_wall_budget: std::time::Duration,
 }
 
 impl PageRuntime {
@@ -181,6 +185,17 @@ impl PageRuntime {
             },
         );
 
+        let exec_deadline: Rc<std::cell::Cell<Option<std::time::Instant>>> =
+            Rc::new(std::cell::Cell::new(None));
+        {
+            let deadline = exec_deadline.clone();
+            rt.set_interrupt_handler(Some(Box::new(move || {
+                deadline
+                    .get()
+                    .is_some_and(|d| std::time::Instant::now() > d)
+            })));
+        }
+
         Ok(PageRuntime {
             ctx,
             rt,
@@ -190,40 +205,62 @@ impl PageRuntime {
             base,
             module_sources,
             module_misses,
+            exec_deadline,
+            script_wall_budget: std::time::Duration::from_secs(10),
         })
+    }
+
+    /// 单次 JS 进入(一段脚本 / 一个定时器回调 / 一轮微任务)的墙钟预算。
+    pub fn set_script_wall_budget(&mut self, budget: std::time::Duration) {
+        self.script_wall_budget = budget;
+    }
+
+    /// 在设定截止时刻的前提下进入 JS;返回后清除,避免影响宿主间隙。
+    fn with_deadline<T>(&self, f: impl FnOnce() -> T) -> T {
+        self.exec_deadline
+            .set(Some(std::time::Instant::now() + self.script_wall_budget));
+        let result = f();
+        self.exec_deadline.set(None);
+        result
     }
 
     /// 执行一段经典 script(非 module)。异常转成 `RuntimeError::Js`。
     pub fn eval(&self, source: &str) -> Result<(), RuntimeError> {
-        self.ctx
-            .with(|ctx| eval_caught(&ctx, source, "surl:script"))
+        self.with_deadline(|| {
+            self.ctx
+                .with(|ctx| eval_caught(&ctx, source, "surl:script"))
+        })
     }
 
     /// 求值一个表达式,结果转成 String 带回(测试与诊断用)。
     pub fn eval_string(&self, source: &str) -> Result<String, RuntimeError> {
-        self.ctx.with(|ctx| {
-            let result: Result<String, rquickjs::Error> = ctx.eval(source);
-            result
-                .catch(&ctx)
-                .map_err(|caught| caught_to_error(caught, "surl:eval_string"))
+        self.with_deadline(|| {
+            self.ctx.with(|ctx| {
+                let result: Result<String, rquickjs::Error> = ctx.eval(source);
+                result
+                    .catch(&ctx)
+                    .map_err(|caught| caught_to_error(caught, "surl:eval_string"))
+            })
         })
     }
 
     /// 手动泵微任务队列直到清空(M2 事件循环的雏形)。
     /// 返回执行的 job 数。
     pub fn pump_jobs(&self) -> Result<usize, RuntimeError> {
-        let mut executed = 0;
-        while self.rt.is_job_pending() {
-            match self.rt.execute_pending_job() {
-                Ok(true) => executed += 1,
-                Ok(false) => break,
-                Err(_job_err) => {
-                    // job 内的异常:M1 先吞掉计数,M2 事件循环统一上报
-                    executed += 1;
+        self.with_deadline(|| {
+            let mut executed = 0;
+            while self.rt.is_job_pending() {
+                match self.rt.execute_pending_job() {
+                    Ok(true) => executed += 1,
+                    Ok(false) => break,
+                    Err(_job_err) => {
+                        // job 内的异常:M1 先吞掉计数,M2 事件循环统一上报
+                        executed += 1;
+                    }
                 }
             }
-        }
-        Ok(executed)
+            Ok(executed)
+        })
     }
 
     /// 页面加载的同步编排(M1 遗留,测试友好):内联 classic script + 生命周期
@@ -236,8 +273,12 @@ impl PageRuntime {
         };
         for script in scripts {
             match script {
-                Script::Inline(source) => self.eval_page_script(&source, &mut report),
-                Script::External(src) => {
+                Script::Inline(node, source) => {
+                    self.set_current_script(Some(node));
+                    self.eval_page_script(&source, &mut report);
+                    self.set_current_script(None);
+                }
+                Script::External(_, src) => {
                     tracing::warn!(target: "surl_js", "run_scripts skips external script: {src}");
                     report.skipped_external += 1;
                 }
@@ -272,8 +313,12 @@ impl PageRuntime {
         let mut module_scripts: Vec<Script> = Vec::new();
         for script in scripts {
             match script {
-                Script::Inline(source) => self.eval_page_script(&source, &mut report.scripts),
-                Script::External(src) => {
+                Script::Inline(node, source) => {
+                    self.set_current_script(Some(node));
+                    self.eval_page_script(&source, &mut report.scripts);
+                    self.set_current_script(None);
+                }
+                Script::External(node, src) => {
                     // classic 外链脚本是阻塞语义:取回来立刻按序执行
                     let resolved = self.resolve_url(&src);
                     let request = HttpRequest {
@@ -285,7 +330,9 @@ impl PageRuntime {
                     match net.fetch(request).await {
                         Ok(resp) if (200..300).contains(&resp.status) => {
                             let source = String::from_utf8_lossy(&resp.body).into_owned();
+                            self.set_current_script(Some(node));
                             self.eval_page_script(&source, &mut report.scripts);
+                            self.set_current_script(None);
                         }
                         Ok(resp) => {
                             let msg = format!("script {resolved}: HTTP {}", resp.status);
@@ -382,6 +429,10 @@ impl PageRuntime {
 
     /// 以 loader 路径导入模块(入口有绝对 URL 的情形)。
     fn import_module(&self, url: &str) -> Result<(), RuntimeError> {
+        self.with_deadline(|| self.import_module_inner(url))
+    }
+
+    fn import_module_inner(&self, url: &str) -> Result<(), RuntimeError> {
         self.ctx.with(|ctx| {
             let result: Result<(), rquickjs::Error> = (|| {
                 let promise = rquickjs::Module::import(&ctx, url)?;
@@ -396,6 +447,10 @@ impl PageRuntime {
 
     /// 内联 module:直接以合成名评估源码,其 import 仍走 loader。
     fn evaluate_inline_module(&self, name: &str, source: &str) -> Result<(), RuntimeError> {
+        self.with_deadline(|| self.evaluate_inline_module_inner(name, source))
+    }
+
+    fn evaluate_inline_module_inner(&self, name: &str, source: &str) -> Result<(), RuntimeError> {
         self.ctx.with(|ctx| {
             let result: Result<(), rquickjs::Error> = (|| {
                 let module = rquickjs::Module::declare(ctx.clone(), name, source)?;
@@ -540,10 +595,12 @@ impl PageRuntime {
     where
         A: for<'js> rquickjs::function::IntoArgs<'js>,
     {
-        self.ctx.with(|ctx| {
-            let func: Function = ctx.globals().get(name)?;
-            let result: Result<(), rquickjs::Error> = func.call(args);
-            result.catch(&ctx).map_err(|caught| caught_to_error(caught, name))
+        self.with_deadline(|| {
+            self.ctx.with(|ctx| {
+                let func: Function = ctx.globals().get(name)?;
+                let result: Result<(), rquickjs::Error> = func.call(args);
+                result.catch(&ctx).map_err(|caught| caught_to_error(caught, name))
+            })
         })
     }
 
@@ -558,6 +615,14 @@ impl PageRuntime {
         }
         if let Err(e) = self.pump_jobs() {
             report.errors.push(e.to_string());
+        }
+    }
+
+    /// 设置/清除 document.currentScript(webpack 的 publicPath 推导依赖它)。
+    fn set_current_script(&self, node: Option<surl_dom::NodeId>) {
+        let raw = node.map_or(0.0, |n| n.to_ffi() as f64);
+        if let Err(e) = self.call_trampoline("__surl_setCurrentScript", (raw,)) {
+            tracing::warn!(target: "surl_js", "set_current_script: {e}");
         }
     }
 

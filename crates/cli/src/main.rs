@@ -98,7 +98,11 @@ async fn load(input: &str) -> anyhow::Result<(String, Option<url::Url>)> {
     if input.starts_with("http://") || input.starts_with("https://") {
         let result = surl_core::fetch::fetch(input).await?;
         if !(200..300).contains(&result.status) {
-            tracing::warn!(status = result.status, "non-2xx response");
+            // 项目起源就是 200 掩盖了空壳;非 2xx 更要明着说(可能是反爬挑战页)
+            eprintln!(
+                "surl: warning: HTTP {} from {} — output may be an error/challenge page",
+                result.status, result.final_url
+            );
         }
         let html = String::from_utf8_lossy(&result.body).into_owned();
         return Ok((html, Some(result.final_url)));

@@ -474,3 +474,98 @@ async fn crypto_is_deterministic_across_runs() {
     assert_eq!(a, b, "randomUUID must be deterministic across runs");
 }
 
+
+#[tokio::test]
+async fn infinite_loop_script_is_interrupted_not_hung() {
+    // surl 必须永远能终止:死循环脚本被 interrupt handler 掐断,
+    // 页面其余部分照常执行
+    let mut rt = PageRuntime::new(parse_html(concat!(
+        "<!doctype html><div id='x'></div>",
+        "<script>for(;;){}</script>",
+        "<script>document.getElementById('x').textContent = 'survived';</script>",
+    )))
+    .unwrap();
+    rt.set_script_wall_budget(std::time::Duration::from_millis(300));
+    let t0 = std::time::Instant::now();
+    let report = rt.load(&NoNetwork, SettleOptions::default()).await.unwrap();
+    assert!(t0.elapsed() < std::time::Duration::from_secs(5), "took {:?}", t0.elapsed());
+    assert_eq!(report.scripts.errors.len(), 1, "{:?}", report.scripts.errors);
+    assert_eq!(report.scripts.executed, 1);
+    assert!(rt.document().to_html().contains("survived"));
+}
+
+#[tokio::test]
+async fn current_script_and_resolved_src() {
+    let net = MockNet::default().route(
+        "https://app.test/js/app.js",
+        200,
+        r#"globalThis.seenSrc = document.currentScript && document.currentScript.src;"#,
+    );
+    let rt = PageRuntime::with_base(
+        parse_html(concat!(
+            "<!doctype html>",
+            "<script src='/js/app.js'></script>",
+            "<script>globalThis.afterSrc = document.currentScript ? 'set' : 'null';</script>",
+        )),
+        Some(base()),
+    )
+    .unwrap();
+    rt.load(&net, SettleOptions::default()).await.unwrap();
+    rt.eval(concat!(
+        "if (seenSrc !== 'https://app.test/js/app.js') throw new Error('src: ' + seenSrc);",
+        "if (afterSrc !== 'set') throw new Error('inline currentScript missing');",
+        "if (document.currentScript !== null) throw new Error('currentScript leaked');",
+    ))
+    .unwrap();
+}
+
+#[tokio::test]
+async fn xhr_over_fetch_bridge() {
+    let net = MockNet::default().route("https://app.test/api", 200, r#"{"n":7}"#);
+    let rt = PageRuntime::with_base(
+        parse_html(
+            r#"<!doctype html><script>
+              globalThis.states = [];
+              const xhr = new XMLHttpRequest();
+              xhr.open("GET", "/api");
+              xhr.onreadystatechange = () => states.push(xhr.readyState);
+              xhr.onload = () => {
+                globalThis.result = JSON.parse(xhr.responseText).n;
+                globalThis.hdr = xhr.getResponseHeader("content-type");
+              };
+              xhr.send();
+            </script>"#,
+        ),
+        Some(base()),
+    )
+    .unwrap();
+    let report = rt.load(&net, SettleOptions::default()).await.unwrap();
+    assert_eq!(report.settle.fetches, 1);
+    rt.eval(concat!(
+        "if (globalThis.result !== 7) throw new Error('result: ' + globalThis.result);",
+        "if (hdr !== 'text/plain') throw new Error('hdr: ' + hdr);",
+        "if (states.join(',') !== '2,3,4') throw new Error('states: ' + states.join(','));",
+    ))
+    .unwrap();
+}
+
+#[tokio::test]
+async fn custom_elements_registry() {
+    let rt = PageRuntime::new(parse_html("<!doctype html>")).unwrap();
+    rt.eval(
+        r#"
+        globalThis.defined = [];
+        customElements.whenDefined("x-a").then(() => defined.push("x-a"));
+        class XA extends HTMLElement {}
+        customElements.define("x-a", XA);
+        if (customElements.get("x-a") !== XA) throw new Error("get broken");
+        let dup = false;
+        try { customElements.define("x-a", XA); } catch (e) { dup = e.name === "NotSupportedError"; }
+        if (!dup) throw new Error("duplicate define should throw");
+    "#,
+    )
+    .unwrap();
+    rt.pump_jobs().unwrap();
+    rt.eval("if (defined.join(',') !== 'x-a') throw new Error('whenDefined broken')")
+        .unwrap();
+}

@@ -112,7 +112,7 @@ pub fn scan_specifiers(source: &str) -> Vec<String> {
         }
         let rest = &source[j..];
         // 只在合理近距离内找 from "..."(跨 200 字符的 export 列表也够)
-        let window = &rest[..rest.len().min(400)];
+        let window = clamp_to_char_boundary(rest, 400);
         if let Some(fpos) = window.find(" from ") {
             if let Some(spec) = read_string_literal(window[fpos + 6..].trim_start()) {
                 out.push(spec);
@@ -141,11 +141,24 @@ fn scan_after_import(rest: &str) -> Option<String> {
         return read_string_literal(trimmed);
     }
     // import ... from "..."(绑定列表里不含引号,窗口内找 from)
-    let window = &rest[..rest.len().min(400)];
+    let window = clamp_to_char_boundary(rest, 400);
     let fpos = window.find("from")?;
     // "from" 必须是独立词
     let after = &window[fpos + 4..];
     read_string_literal(after.trim_start())
+}
+
+/// 截断到不超过 max 字节,且落在字符边界上(压缩产物里常见 U+2060 之类的
+/// 多字节字符,裸切片会 panic)。
+fn clamp_to_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 fn read_string_literal(s: &str) -> Option<String> {
@@ -239,6 +252,16 @@ mod tests {
         assert!(specs.contains(&"./star.js".to_string()));
         assert!(specs.contains(&"./route-Home.js".to_string()));
         assert!(!specs.contains(&"./nope.js".to_string()));
+    }
+
+    #[test]
+    fn scan_survives_multibyte_chars_at_window_edge() {
+        // linear.app 的 bundle 在扫描窗口边界处有 U+2060,裸切片会 panic
+        let mut src = String::from("import ");
+        src.push_str(&"\u{2060}".repeat(300));
+        src.push_str(" x from \"./far.js\"; export ");
+        src.push_str(&"\u{2060}".repeat(300));
+        let _ = scan_specifiers(&src); // 不 panic 即通过
     }
 
     #[test]

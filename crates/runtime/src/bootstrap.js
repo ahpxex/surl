@@ -1737,11 +1737,23 @@
   for (const [prop, attr] of Object.entries(reflectedProps)) {
     if (Object.getOwnPropertyDescriptor(Element.prototype, prop)) continue;
     const isBool = prop === "checked" || prop === "selected" || prop === "disabled";
+    // 规范:URL 类属性(src/href)的 property 反射出解析后的绝对地址,
+    // attribute 保持原样(webpack 的 publicPath 推导依赖前者)
+    const isUrl = prop === "src" || prop === "href";
     Object.defineProperty(Element.prototype, prop, {
       configurable: true,
       get() {
         const v = this.getAttribute(attr);
-        return isBool ? v !== null : (v ?? "");
+        if (isBool) return v !== null;
+        if (v == null) return "";
+        if (isUrl && v !== "") {
+          try {
+            return new URL(v, g.location.href).href;
+          } catch (_) {
+            return v;
+          }
+        }
+        return v;
       },
       set(v) {
         if (isBool) {
@@ -1865,10 +1877,19 @@
       return g.document.body;
     },
   });
+  // document.currentScript:宿主在执行每段 classic script 前后设置/清除。
+  // webpack 等 chunk 加载器靠 currentScript.src 推导 publicPath。
+  let currentScriptNode = null;
   Object.defineProperty(g.document, "currentScript", {
     configurable: true,
     get() {
-      return null;
+      return currentScriptNode;
+    },
+  });
+  Object.defineProperty(g, "__surl_setCurrentScript", {
+    enumerable: false,
+    value: function (id) {
+      currentScriptNode = id ? wrap(id) : null;
     },
   });
   g.document.hasFocus = () => true;
@@ -2041,6 +2062,269 @@
   g.structuredClone = function (value) {
     return JSON.parse(JSON.stringify(value));
   };
+
+  // XMLHttpRequest:架在 fetch 桥上的完整异步实现(sync 模式降级为异步并告警)
+  class XMLHttpRequest extends EventTarget {
+    constructor() {
+      super();
+      this.readyState = 0;
+      this.status = 0;
+      this.statusText = "";
+      this.responseText = "";
+      this.response = "";
+      this.responseType = "";
+      this.responseURL = "";
+      this.timeout = 0;
+      this.withCredentials = false;
+      this.onreadystatechange = null;
+      this.onload = null;
+      this.onerror = null;
+      this.onloadend = null;
+      this.onloadstart = null;
+      this.onabort = null;
+      this.ontimeout = null;
+      this._headers = [];
+      this._respHeaders = null;
+      this._aborted = false;
+    }
+    _fire(type) {
+      const ev = new Event(type);
+      ev.target = this;
+      const handler = this["on" + type];
+      if (typeof handler === "function") {
+        try {
+          handler.call(this, ev);
+        } catch (e) {
+          console.error("XHR on" + type + " error:", e && e.message ? e.message : String(e));
+        }
+      }
+      this._invokeListeners(ev, 2);
+    }
+    _setState(state) {
+      this.readyState = state;
+      this._fire("readystatechange");
+    }
+    open(method, url, async) {
+      if (async === false) {
+        console.warn("XMLHttpRequest: sync mode unsupported, degrading to async");
+      }
+      this._method = String(method).toUpperCase();
+      this._url = String(url);
+      this._setState(1);
+    }
+    setRequestHeader(k, v) {
+      this._headers.push([String(k), String(v)]);
+    }
+    send(body) {
+      const xhr = this;
+      this._fire("loadstart");
+      fetch(this._url, {
+        method: this._method || "GET",
+        headers: this._headers,
+        body: body == null ? undefined : body,
+      })
+        .then((resp) => resp.text().then((text) => ({ resp, text })))
+        .then(({ resp, text }) => {
+          if (xhr._aborted) return;
+          xhr.status = resp.status;
+          xhr.statusText = resp.statusText;
+          xhr.responseURL = resp.url;
+          xhr._respHeaders = resp.headers;
+          xhr.responseText = text;
+          xhr.response =
+            xhr.responseType === "json"
+              ? (() => {
+                  try {
+                    return JSON.parse(text);
+                  } catch (_) {
+                    return null;
+                  }
+                })()
+              : text;
+          xhr._setState(2);
+          xhr._setState(3);
+          xhr._setState(4);
+          xhr._fire("load");
+          xhr._fire("loadend");
+        })
+        .catch(() => {
+          if (xhr._aborted) return;
+          xhr._setState(4);
+          xhr._fire("error");
+          xhr._fire("loadend");
+        });
+    }
+    abort() {
+      this._aborted = true;
+      this._setState(0);
+      this._fire("abort");
+      this._fire("loadend");
+    }
+    getResponseHeader(k) {
+      return this._respHeaders ? this._respHeaders.get(k) : null;
+    }
+    getAllResponseHeaders() {
+      if (!this._respHeaders) return "";
+      const out = [];
+      this._respHeaders.forEach((v, k) => out.push(k + ": " + v));
+      return out.join("\r\n");
+    }
+    overrideMimeType() {}
+  }
+  XMLHttpRequest.UNSENT = 0;
+  XMLHttpRequest.OPENED = 1;
+  XMLHttpRequest.HEADERS_RECEIVED = 2;
+  XMLHttpRequest.LOADING = 3;
+  XMLHttpRequest.DONE = 4;
+  g.XMLHttpRequest = XMLHttpRequest;
+
+  // customElements:注册表语义(define/get/whenDefined),不做真实升级——
+  // 自定义元素以 HTMLElement 形态存在于树里,结构提取不受影响
+  {
+    const registry = new Map();
+    const waiting = new Map();
+    g.customElements = {
+      define(name, ctor) {
+        name = String(name).toLowerCase();
+        if (registry.has(name)) {
+          throw new DOMException("customElements: '" + name + "' already defined", "NotSupportedError");
+        }
+        registry.set(name, ctor);
+        const resolvers = waiting.get(name);
+        if (resolvers) {
+          waiting.delete(name);
+          for (const resolve of resolvers) resolve(ctor);
+        }
+      },
+      get(name) {
+        return registry.get(String(name).toLowerCase());
+      },
+      getName(ctor) {
+        for (const [n, c] of registry) if (c === ctor) return n;
+        return null;
+      },
+      whenDefined(name) {
+        name = String(name).toLowerCase();
+        if (registry.has(name)) return Promise.resolve(registry.get(name));
+        return new Promise((resolve) => {
+          if (!waiting.has(name)) waiting.set(name, []);
+          waiting.get(name).push(resolve);
+        });
+      },
+      upgrade() {},
+    };
+  }
+
+  // ReadableStream:够环境探测 + 空流消费的最小实现
+  class ReadableStream {
+    constructor() {
+      this.locked = false;
+    }
+    getReader() {
+      const stream = this;
+      stream.locked = true;
+      return {
+        read() {
+          return Promise.resolve({ done: true, value: undefined });
+        },
+        releaseLock() {
+          stream.locked = false;
+        },
+        cancel() {
+          return Promise.resolve();
+        },
+        closed: Promise.resolve(),
+      };
+    }
+    cancel() {
+      return Promise.resolve();
+    }
+    tee() {
+      return [new ReadableStream(), new ReadableStream()];
+    }
+  }
+  g.ReadableStream = ReadableStream;
+  g.WritableStream = class WritableStream {
+    getWriter() {
+      return {
+        write: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+        releaseLock() {},
+      };
+    }
+  };
+  g.TransformStream = class TransformStream {
+    constructor() {
+      this.readable = new ReadableStream();
+      this.writable = new g.WritableStream();
+    }
+  };
+
+  // canvas.getContext:黑洞上下文。不渲染像素,但 WebGL/2d 初始化代码
+  // 不该炸掉整棵组件树(根级 error boundary 会连正文一起吞)。
+  // 黑洞语义:任意属性=自身、可调用(返回自身)、数值转换=0、恒真值。
+  // 配合脚本墙钟预算,黑洞上的条件死循环也会被掐断。
+  {
+    const holeTarget = function () {};
+    const blackHole = new Proxy(holeTarget, {
+      get(t, prop) {
+        if (prop === Symbol.toPrimitive) return () => 0;
+        if (prop === "toString") return () => "";
+        if (prop === "valueOf") return () => 0;
+        if (prop === Symbol.iterator) {
+          return function () {
+            return { next: () => ({ done: true, value: undefined }) };
+          };
+        }
+        return blackHole;
+      },
+      apply() {
+        return blackHole;
+      },
+      construct() {
+        return {};
+      },
+      set() {
+        return true;
+      },
+      has() {
+        return true;
+      },
+    });
+    g.HTMLCanvasElement.prototype.getContext = function (type) {
+      if (!this._contexts) this._contexts = new Map();
+      let ctx = this._contexts.get(type);
+      if (!ctx) {
+        // canvas 属性要指回元素,其余交给黑洞
+        const el = this;
+        ctx = new Proxy(holeTarget, {
+          get(t, prop) {
+            if (prop === "canvas") return el;
+            // 特殊键(toPrimitive/toString/...)拿到特殊实现,其余拿到黑洞自身
+            return blackHole[prop];
+          },
+          apply() {
+            return blackHole;
+          },
+          set() {
+            return true;
+          },
+          has() {
+            return true;
+          },
+        });
+        this._contexts.set(type, ctx);
+      }
+      return ctx;
+    };
+    g.HTMLCanvasElement.prototype.toDataURL = function () {
+      return "data:,";
+    };
+    g.HTMLCanvasElement.prototype.toBlob = function (cb) {
+      if (typeof cb === "function") g.setTimeout(() => cb(null), 0);
+    };
+  }
 
   // WebSocket:环境探测级 stub——存在、可实例化、永不连接。
   // (Supabase realtime 等库检测不到构造器会直接 throw,炸掉整个组件树)
