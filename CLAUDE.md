@@ -7,7 +7,7 @@ curl 给你字节，浏览器给你像素，**surl 给你结构**。输入一个
 - **产物**：单二进制 CLI `surl`，像 curl 一样管道友好；一个 URL 进，结构出。
 - **输出模式**：`--tree`（语义大纲：landmark/heading/link/role，人和 agent 都直接读，默认输出）、`--dom`（JS 执行后的序列化 HTML）、`--json`（完整 IR）、`--md`（readability 式正文提取）。
 - **IR 设计原则**：对齐 a11y snapshot 风格（role/name/state/href + 稳定 uid）——让 agent 在「真浏览器工具」和 surl 之间无感切换；稳定节点身份（跨次渲染 uid 不漂移）是 diff 的前提，本身是树匹配难题。
-- **后续形态**（主线通了再做，方向已定）：`surl diff`（结构 diff）+ 内容寻址快照存储（个人 Wayback，`surl <url> @yesterday`）、watch 模式、`surl serve --mcp`（作为 MCP server 被 agent 直连）。
+- **后续形态**（主线通了再做，方向已定）：`surl diff`（结构 diff）+ 内容寻址快照存储（个人 Wayback，`surl <url> @yesterday`）、watch 模式。**不做 MCP server**（2026-07-15 定）：CLI 本身就是 agent 的接口，管道友好即可被直接调用，再包一层 MCP 纯属 overengineering。
 - **存在理由（差异化）**：对 curl——能执行 JS，拿到真实结构；对 headless Chrome——① settledness 是事实不是 heuristic（自有事件循环，队列清空即完成）；② 虚拟时钟 + 确定性可复现（真浏览器给不了）；③ 单二进制、零浏览器依赖、体积小。
 - **第一用户**：作者自己的 agent 工作流——联网抓取/读链接/部署验证类任务全是场景；项目起源即第一条真实需求（2026-07-15 裸 curl 验证 SPA 部署产生误报）。
 - **项目性质与成功标准**：练手项目，目标是 stretch 技术（async Rust、FFI/GC 边界、浏览器内部、规范阅读、在压缩产物里排障），不考虑商业闭环。成功标准两条：readaware.app 在自研运行时里 hydrate 出含 `discord.gg/whDrKXwHWU` 的树；以及学习确实发生（boss fight 的排障沉淀成 writeup）。
@@ -53,4 +53,4 @@ JS 侧只持有句柄/ID，真实 DOM 状态全部活在 Rust 侧的表里（are
 
 - **无 spec 文档流程**：架构在对话里定，代码即设计。本文件只记录已关闭的决策，防止重开。
 - 产物是单个 CLI 二进制 `surl`。
-- 路线概要：M0 无 JS 语义树（html5ever + `--tree`）→ M1 嵌 QuickJS + DOM 绑定核心 → M2 fetch 桥 + 事件循环 + settledness → M3 ESM + React hydration（boss fight）→ M4 WPT/corpus 回归常态化 → M5 结构 diff、虚拟时钟外露、MCP server。
+- 路线概要：M0 无 JS 语义树（html5ever + `--tree`）→ M1 嵌 QuickJS + DOM 绑定核心 → M2 fetch 桥 + 事件循环 + settledness → M3 ESM + React hydration（boss fight）→ M4 WPT/corpus 回归常态化（M0–M4 已完成）→ M5 结构 diff、虚拟时钟外露（不做 MCP server，见「后续形态」）。

@@ -306,8 +306,25 @@ impl PageRuntime {
 
         // 第二遍:module script(defer 语义——classic 全部跑完后执行)
         if !module_scripts.is_empty() {
-            // 预取整张模块图:入口 src + 内联源码里的说明符
+            // 预取整张模块图:入口 src + 内联源码里的说明符 + modulepreload 提示
             let mut entries: Vec<String> = Vec::new();
+            // <link rel=modulepreload> 是打包器对动态 import chunk 的显式清单,
+            // 计算型说明符(字面量扫描看不见的)全靠它
+            {
+                let doc = self.dom.borrow();
+                for n in doc.descendants(doc.root()) {
+                    if let Some(el) = doc.element(n)
+                        && el.is_html_element("link")
+                        && el.attr("rel").is_some_and(|rel| {
+                            rel.split_ascii_whitespace()
+                                .any(|t| t.eq_ignore_ascii_case("modulepreload"))
+                        })
+                        && let Some(href) = el.attr("href")
+                    {
+                        entries.push(self.resolve_url(href));
+                    }
+                }
+            }
             for script in &module_scripts {
                 if let Script::Module { src, source } = script {
                     match src {

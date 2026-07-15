@@ -520,16 +520,65 @@
       return dom.elementMeta(this._id)[1] || null;
     }
     get attributes() {
-      return dom.attributes(this._id).map(function (row) {
-        return {
-          namespaceURI: row[0] || null,
-          prefix: row[1] || null,
-          localName: row[2],
-          name: row[1] ? row[1] + ":" + row[2] : row[2],
-          value: row[3],
-          specified: true,
+      // 活集合:React 的容器清理循环
+      // `for(var t=e.attributes;t.length;)e.removeAttributeNode(t[0])`
+      // 依赖 length/索引实时反映当前状态,快照数组会让它死循环
+      if (!this._attrMap) {
+        const el = this;
+        const rowToAttr = (row) =>
+          row
+            ? {
+                namespaceURI: row[0] || null,
+                prefix: row[1] || null,
+                localName: row[2],
+                name: row[1] ? row[1] + ":" + row[2] : row[2],
+                value: row[3],
+                specified: true,
+                ownerElement: el,
+              }
+            : null;
+        const base = {
+          item(i) {
+            return rowToAttr(dom.attributes(el._id)[i] || null);
+          },
+          getNamedItem(name) {
+            name = String(name).toLowerCase();
+            const row = dom.attributes(el._id).find((r) => r[2] === name);
+            return rowToAttr(row || null);
+          },
+          [Symbol.iterator]() {
+            return dom.attributes(el._id).map(rowToAttr)[Symbol.iterator]();
+          },
         };
-      });
+        this._attrMap = new Proxy(base, {
+          get(target, prop) {
+            if (prop === "length") return dom.attributes(el._id).length;
+            if (typeof prop === "string" && /^\d+$/.test(prop)) {
+              return target.item(Number(prop)) ?? undefined;
+            }
+            const v = Reflect.get(target, prop, target);
+            return typeof v === "function" ? v.bind(target) : v;
+          },
+          has(target, prop) {
+            if (prop === "length") return true;
+            if (typeof prop === "string" && /^\d+$/.test(prop)) {
+              return Number(prop) < dom.attributes(el._id).length;
+            }
+            return Reflect.has(target, prop);
+          },
+        });
+      }
+      return this._attrMap;
+    }
+    getAttributeNode(name) {
+      return this.attributes.getNamedItem(name);
+    }
+    removeAttributeNode(attr) {
+      if (!attr || typeof attr.name !== "string") {
+        throw new TypeError("removeAttributeNode: argument is not an Attr");
+      }
+      this.removeAttribute(attr.name);
+      return attr;
     }
     getAttribute(name) {
       // 原生 op 的 None 过来是 undefined,DOM 规范要求 null
@@ -1993,6 +2042,37 @@
     return JSON.parse(JSON.stringify(value));
   };
 
+  // WebSocket:环境探测级 stub——存在、可实例化、永不连接。
+  // (Supabase realtime 等库检测不到构造器会直接 throw,炸掉整个组件树)
+  class WebSocket extends EventTarget {
+    constructor(url) {
+      super();
+      this.url = String(url);
+      this.readyState = WebSocket.CONNECTING; // 永远停在 CONNECTING
+      this.protocol = "";
+      this.extensions = "";
+      this.bufferedAmount = 0;
+      this.binaryType = "blob";
+      this.onopen = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.onmessage = null;
+    }
+    send() {}
+    close() {
+      this.readyState = WebSocket.CLOSED;
+    }
+  }
+  WebSocket.CONNECTING = 0;
+  WebSocket.OPEN = 1;
+  WebSocket.CLOSING = 2;
+  WebSocket.CLOSED = 3;
+  WebSocket.prototype.CONNECTING = 0;
+  WebSocket.prototype.OPEN = 1;
+  WebSocket.prototype.CLOSING = 2;
+  WebSocket.prototype.CLOSED = 3;
+  g.WebSocket = WebSocket;
+
   // 确定性 crypto:xorshift32 固定种子——可复现是产品契约,别换成真随机
   let rngState = 0x5f375a86;
   function nextByte() {
@@ -2065,6 +2145,9 @@
   function stringify(value) {
     if (typeof value === "string") return value;
     if (value instanceof Node) return "[object " + value.constructor.name + "]";
+    if (value instanceof Error) {
+      return (value.name || "Error") + ": " + value.message + (value.stack ? "\n" + value.stack : "");
+    }
     try {
       const json = JSON.stringify(value);
       return json === undefined ? String(value) : json;
