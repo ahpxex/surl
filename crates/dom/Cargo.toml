@@ -7,3 +7,7 @@ license.workspace = true
 [dependencies]
 html5ever.workspace = true
 slotmap.workspace = true
+selectors.workspace = true
+cssparser.workspace = true
+precomputed-hash = "0.1"
+thiserror.workspace = true

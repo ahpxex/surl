@@ -22,6 +22,8 @@ clap = { version = "4", features = ["derive"] }
 # HTML 解析与 DOM
 html5ever = "0.39"
 slotmap = "1"
+selectors = "0.39"
+cssparser = "0.37"
 
 # 异步与网络
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

@@ -5,6 +5,7 @@
 //! 跨堆指针,DOM 的唯一所有者是 Rust。
 
 pub mod parser;
+pub mod select;
 pub mod serialize;
 pub mod tree;
 
