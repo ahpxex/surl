@@ -1,0 +1,16 @@
+[package]
+name = "spurl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "spurl"
+path = "src/main.rs"
+
+[dependencies]
+spurl-core.workspace = true
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing-subscriber.workspace = true
