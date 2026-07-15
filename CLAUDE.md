@@ -45,8 +45,8 @@ JS 侧只持有句柄/ID，真实 DOM 状态全部活在 Rust 侧的表里（are
 
 ## 验证（同样无浏览器）
 
-- **WPT 切片**：模块级一致性测试，agent 对照官方用例 grind，不需要浏览器在场。
-- **golden corpus**：真实页面快照回归。第一条用例即项目起源：`surl https://readaware.app` 的输出树必须包含 `discord.gg/whDrKXwHWU`（2026-07-15 用裸 curl 验证 SPA 部署产生误报，本项目由此而来）。
+- **WPT 切片**（M4 起已落地）：官方测试文件 vendor 在 `crates/runtime/tests/wpt/`（commit 钉在 `resources/WPT-COMMIT.txt`），经 `FsHttpClient`（目录即网站）走真实 load 管线跑。expectations.json 是**双向棘轮**：新失败=回归、新通过=必须重新 bless。工具：`SURL_WPT_BLESS=1` 更新、`SURL_WPT_FILTER=<name>` 单文件、`SURL_WPT_VERBOSE=1` 排障。扩切片=往 wpt/ 目录扔文件。
+- **golden corpus**：真实页面快照回归。第一条用例即项目起源与验收标准：readaware.app 的产物冻结在 `crates/runtime/tests/corpus/`，离线渲染出的树必须包含 `discord.gg/whDrKXwHWU`，且两次渲染逐字节一致（2026-07-15 用裸 curl 验证 SPA 部署产生误报，本项目由此而来；M3 已通关，见 docs/m3-boss-fight.md）。
 - 可选：与 jsdom / happy-dom 差分——它们是独立实现，分歧点即 bug 高发区。
 
 ## 工作方式
