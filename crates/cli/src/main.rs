@@ -27,7 +27,9 @@ struct Args {
     no_js: bool,
 }
 
-#[tokio::main]
+// PageRuntime 是单线程世界(Rc + JS 引擎),整个程序跑 current_thread;
+// 网络并发靠 async,不靠线程。
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -39,14 +41,19 @@ async fn main() -> anyhow::Result<()> {
 
     let mut doc = surl_dom::parse_html(&html);
     if !args.no_js {
-        let rt = surl_runtime::PageRuntime::new(doc)?;
-        let report = rt.run_scripts()?;
+        let rt = surl_runtime::PageRuntime::with_base(doc, base.clone())?;
+        let net = surl_core::net::ReqwestClient::new()?;
+        let report = rt
+            .load(&net, surl_runtime::SettleOptions::default())
+            .await?;
         tracing::debug!(
-            executed = report.executed,
-            skipped_external = report.skipped_external,
-            skipped_module = report.skipped_module,
-            errors = report.errors.len(),
-            "page scripts done"
+            scripts = report.scripts.executed,
+            script_errors = report.scripts.errors.len(),
+            skipped_module = report.scripts.skipped_module,
+            timers = report.settle.timers_fired,
+            fetches = report.settle.fetches,
+            virtual_ms = report.settle.virtual_elapsed_ms,
+            "page load settled"
         );
         doc = rt.take_document();
     }

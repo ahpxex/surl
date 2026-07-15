@@ -563,6 +563,245 @@
     return !event.defaultPrevented;
   };
 
+  // ---- 定时器:回调存 JS 侧,Rust 只管调度表,到点经蹦床调回 ----
+
+  const timerCallbacks = new Map();
+
+  g.setTimeout = function (fn, delay) {
+    const args = Array.prototype.slice.call(arguments, 2);
+    const id = dom.timerSchedule(Number(delay) || 0, false);
+    timerCallbacks.set(id, { fn, args });
+    return id;
+  };
+  g.setInterval = function (fn, delay) {
+    const args = Array.prototype.slice.call(arguments, 2);
+    const id = dom.timerSchedule(Number(delay) || 0, true);
+    timerCallbacks.set(id, { fn, args, repeating: true });
+    return id;
+  };
+  g.clearTimeout = g.clearInterval = function (id) {
+    if (id == null) return;
+    dom.timerClear(Number(id));
+    timerCallbacks.delete(Number(id));
+  };
+  g.queueMicrotask = function (fn) {
+    Promise.resolve().then(() => fn());
+  };
+  g.requestAnimationFrame = function (fn) {
+    return g.setTimeout(() => fn(dom.clockNow()), 16);
+  };
+  g.cancelAnimationFrame = g.clearTimeout;
+
+  // 宿主事件循环的蹦床:执行到点的定时器回调
+  Object.defineProperty(g, "__surl_runTimer", {
+    enumerable: false,
+    value: function (id) {
+      const entry = timerCallbacks.get(id);
+      if (!entry) return;
+      if (!entry.repeating) timerCallbacks.delete(id);
+      if (typeof entry.fn === "function") entry.fn.apply(g, entry.args);
+      else if (typeof entry.fn === "string") (0, eval)(entry.fn);
+    },
+  });
+
+  // 确定性时钟:Date.now / performance.now 全部走虚拟时钟
+  Date.now = function () {
+    return dom.clockNow();
+  };
+  g.performance = {
+    now() {
+      return dom.clockNow();
+    },
+    timeOrigin: 0,
+    mark() {},
+    measure() {},
+  };
+
+  // ---- URL(QuickJS 无内置;解析走 Rust 的 url crate)----
+
+  class URL {
+    constructor(input, base) {
+      const raw = dom.urlResolve(String(input), base === undefined ? "" : String(base));
+      if (!raw) throw new TypeError("Invalid URL: " + input);
+      const p = JSON.parse(raw);
+      this.href = p.href;
+      this.origin = p.origin;
+      this.protocol = p.protocol;
+      this.host = p.host;
+      this.hostname = p.hostname;
+      this.port = p.port;
+      this.pathname = p.pathname;
+      this.search = p.search;
+      this.hash = p.hash;
+      this.username = "";
+      this.password = "";
+    }
+    toString() {
+      return this.href;
+    }
+    toJSON() {
+      return this.href;
+    }
+  }
+  g.URL = URL;
+
+  // ---- location / navigator ----
+
+  function makeLocation(href) {
+    try {
+      const url = new URL(href || "http://localhost/");
+      url.assign = function () {};
+      url.replace = function () {};
+      url.reload = function () {};
+      return url;
+    } catch (_) {
+      return { href: href || "", origin: "", protocol: "", host: "", hostname: "", port: "", pathname: "/", search: "", hash: "", assign() {}, replace() {}, reload() {}, toString() { return this.href; } };
+    }
+  }
+  g.location = makeLocation(dom.baseUrl);
+  document.location = g.location;
+  g.navigator = {
+    userAgent: "surl (browser-lite; like Gecko-not-at-all)",
+    language: "en-US",
+    languages: ["en-US"],
+    platform: "surl",
+    onLine: true,
+  };
+  g.history = {
+    length: 1,
+    state: null,
+    pushState(state) {
+      this.state = state;
+    },
+    replaceState(state) {
+      this.state = state;
+    },
+    back() {},
+    forward() {},
+    go() {},
+  };
+
+  // ---- fetch:请求经 op 入队,宿主 settle 循环完成后经蹦床回调 ----
+
+  const pendingFetches = new Map();
+
+  class Headers {
+    constructor(pairs) {
+      this._map = new Map();
+      if (Array.isArray(pairs)) {
+        for (const [k, v] of pairs) this.append(k, v);
+      } else if (pairs && typeof pairs === "object") {
+        for (const k of Object.keys(pairs)) this.append(k, pairs[k]);
+      }
+    }
+    append(k, v) {
+      k = String(k).toLowerCase();
+      const prev = this._map.get(k);
+      this._map.set(k, prev === undefined ? String(v) : prev + ", " + String(v));
+    }
+    set(k, v) {
+      this._map.set(String(k).toLowerCase(), String(v));
+    }
+    get(k) {
+      const v = this._map.get(String(k).toLowerCase());
+      return v === undefined ? null : v;
+    }
+    has(k) {
+      return this._map.has(String(k).toLowerCase());
+    }
+    forEach(fn) {
+      for (const [k, v] of this._map) fn(v, k, this);
+    }
+    entries() {
+      return this._map.entries();
+    }
+    [Symbol.iterator]() {
+      return this._map.entries();
+    }
+  }
+  g.Headers = Headers;
+
+  class Response {
+    constructor(body, init) {
+      init = init || {};
+      this._bodyText = body == null ? "" : String(body);
+      this.status = init.status === undefined ? 200 : init.status;
+      this.statusText = init.statusText || "";
+      this.headers = init.headers instanceof Headers ? init.headers : new Headers(init.headers);
+      this.url = init.url || "";
+      this.ok = this.status >= 200 && this.status < 300;
+      this.redirected = false;
+      this.type = "basic";
+      this.bodyUsed = false;
+    }
+    text() {
+      this.bodyUsed = true;
+      return Promise.resolve(this._bodyText);
+    }
+    json() {
+      this.bodyUsed = true;
+      try {
+        return Promise.resolve(JSON.parse(this._bodyText));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    }
+    clone() {
+      const r = new Response(this._bodyText, {
+        status: this.status,
+        statusText: this.statusText,
+        url: this.url,
+      });
+      r.headers = this.headers;
+      return r;
+    }
+  }
+  g.Response = Response;
+
+  g.fetch = function (input, init) {
+    init = init || {};
+    let url;
+    try {
+      url = new URL(String(input && input.url !== undefined ? input.url : input), g.location.href || undefined).href;
+    } catch (e) {
+      return Promise.reject(new TypeError("fetch: invalid URL: " + input));
+    }
+    const method = String(init.method || "GET").toUpperCase();
+    const headerPairs = [];
+    if (init.headers) {
+      const h = init.headers instanceof Headers ? init.headers : new Headers(init.headers);
+      h.forEach((v, k) => headerPairs.push([k, v]));
+    }
+    const hasBody = init.body != null;
+    const body = hasBody ? String(init.body) : "";
+    return new Promise((resolve, reject) => {
+      const id = dom.fetchStart(url, method, headerPairs, hasBody, body);
+      pendingFetches.set(id, { resolve, reject, url });
+    });
+  };
+
+  // 宿主回调:done=true 时 (status, statusText, finalUrl, headerPairs, bodyText),
+  // 失败时 errMessage 非空
+  Object.defineProperty(g, "__surl_fetchDone", {
+    enumerable: false,
+    value: function (id, errMessage, status, statusText, finalUrl, headerPairs, bodyText) {
+      const pending = pendingFetches.get(id);
+      if (!pending) return;
+      pendingFetches.delete(id);
+      if (errMessage) {
+        pending.reject(new TypeError("fetch failed: " + errMessage));
+        return;
+      }
+      const resp = new Response(bodyText, {
+        status,
+        statusText,
+        url: finalUrl,
+        headers: headerPairs,
+      });
+      pending.resolve(resp);
+    },
+  });
+
   function stringify(value) {
     if (typeof value === "string") return value;
     if (value instanceof Node) return "[object " + value.constructor.name + "]";

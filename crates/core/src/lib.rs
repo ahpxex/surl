@@ -5,4 +5,5 @@
 //! Web API,M1)→ 事件循环跑到静止(M2)→ semantic(语义树 IR)。
 
 pub mod fetch;
+pub mod net;
 pub mod semantic;

@@ -4,14 +4,20 @@
 //! 也被各原生 op 闭包持有)与一个 QuickJS Context。JS 侧经 bootstrap.js 搭出
 //! 的包装类访问 DOM,手里只有数字句柄——没有跨 GC 边界的对象图。
 
+pub mod event_loop;
+pub mod net;
 mod ops;
 
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
-use rquickjs::{CatchResultExt, CaughtError, Context, Runtime};
+use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
+use rquickjs::{CatchResultExt, CaughtError, Context, Function, Runtime};
 use surl_dom::Document;
 use thiserror::Error;
+
+use net::{HttpClient, HttpRequest, HttpResult};
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -35,6 +41,42 @@ pub struct ScriptReport {
     pub skipped_external: usize,
     pub skipped_module: usize,
     pub errors: Vec<String>,
+}
+
+/// settle 的预算:防住 setInterval 永动机与无限自我调度。
+#[derive(Debug, Clone, Copy)]
+pub struct SettleOptions {
+    /// 虚拟时间预算(毫秒)。超过它的定时器直接放弃并计数。
+    pub max_virtual_time_ms: u64,
+    /// 宏任务总数保险丝。
+    pub max_tasks: usize,
+}
+
+impl Default for SettleOptions {
+    fn default() -> Self {
+        SettleOptions {
+            max_virtual_time_ms: 30_000,
+            max_tasks: 100_000,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SettleReport {
+    /// 本次静止化推进了多少虚拟毫秒
+    pub virtual_elapsed_ms: u64,
+    pub timers_fired: usize,
+    pub fetches: usize,
+    /// 超出虚拟时间预算而放弃的定时器数
+    pub abandoned_timers: usize,
+    pub hit_task_limit: bool,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct LoadReport {
+    pub scripts: ScriptReport,
+    pub settle: SettleReport,
 }
 
 enum Script {
@@ -75,18 +117,32 @@ pub struct PageRuntime {
     rt: Runtime,
     dom: ops::SharedDom,
     console: ops::ConsoleSink,
+    event_loop: ops::SharedEventLoop,
+    base: Option<url::Url>,
 }
 
 impl PageRuntime {
     /// 接管一棵文档树,建好 JS 世界(原生 op + bootstrap 的 DOM 包装层)。
     pub fn new(doc: Document) -> Result<Self, RuntimeError> {
+        Self::with_base(doc, None)
+    }
+
+    /// 带页面 URL 的构造:location、fetch 相对地址、外链 script 都以它为基准。
+    pub fn with_base(doc: Document, base: Option<url::Url>) -> Result<Self, RuntimeError> {
         let rt = Runtime::new()?;
         let ctx = Context::full(&rt)?;
         let dom: ops::SharedDom = Rc::new(RefCell::new(doc));
         let console: ops::ConsoleSink = Rc::new(RefCell::new(Vec::new()));
+        let event_loop: ops::SharedEventLoop = Rc::new(RefCell::new(Default::default()));
 
         ctx.with(|ctx| -> Result<(), RuntimeError> {
-            ops::install(&ctx, &dom, &console)?;
+            ops::install(
+                &ctx,
+                &dom,
+                &console,
+                &event_loop,
+                base.as_ref().map(url::Url::as_str),
+            )?;
             eval_caught(&ctx, include_str!("bootstrap.js"), "surl:bootstrap")?;
             Ok(())
         })?;
@@ -96,6 +152,8 @@ impl PageRuntime {
             rt,
             dom,
             console,
+            event_loop,
+            base,
         })
     }
 
@@ -122,33 +180,19 @@ impl PageRuntime {
         Ok(executed)
     }
 
-    /// 页面加载的 M1 版编排:按文档序执行内联 classic `<script>`,
-    /// 每段脚本后泵空微任务队列,最后触发 DOMContentLoaded / load。
-    ///
-    /// 已知简化(M2/M3 收口):外链 src 与 type=module 跳过并计数;解析期
-    /// 语义(document.write、脚本注入脚本再执行)不支持。
+    /// 页面加载的同步编排(M1 遗留,测试友好):内联 classic script + 生命周期
+    /// 事件。不碰网络、不跑事件循环——完整路径用 [`PageRuntime::load`]。
     pub fn run_scripts(&self) -> Result<ScriptReport, RuntimeError> {
         let mut report = ScriptReport::default();
-        // 先收集再执行:执行中的 DOM 变更不得影响本轮脚本集
         let scripts: Vec<Script> = {
             let doc = self.dom.borrow();
             collect_scripts(&doc)
         };
         for script in scripts {
             match script {
-                Script::Inline(source) => {
-                    match self.eval(&source) {
-                        Ok(()) => report.executed += 1,
-                        Err(e) => {
-                            // 浏览器语义:单个脚本抛错不中止页面
-                            tracing::warn!(target: "surl_js", "script error: {e}");
-                            report.errors.push(e.to_string());
-                        }
-                    }
-                    self.pump_jobs()?;
-                }
+                Script::Inline(source) => self.eval_page_script(&source, &mut report),
                 Script::External(src) => {
-                    tracing::warn!(target: "surl_js", "skipping external script (M2): {src}");
+                    tracing::warn!(target: "surl_js", "run_scripts skips external script: {src}");
                     report.skipped_external += 1;
                 }
                 Script::Module => {
@@ -160,6 +204,203 @@ impl PageRuntime {
         self.eval("__surl_fireReady()")?;
         self.pump_jobs()?;
         Ok(report)
+    }
+
+    /// 完整页面加载:script(内联 + 外链,文档序)→ DOMContentLoaded →
+    /// 事件循环跑到静止 → load 事件 → 再次静止。
+    ///
+    /// 这就是「settledness 是事实」的实现:微任务空 + 无就绪宏任务 +
+    /// 无在途网络 + 剩余定时器超出预算 ⇒ 页面完成。
+    pub async fn load(
+        &self,
+        net: &dyn HttpClient,
+        opts: SettleOptions,
+    ) -> Result<LoadReport, RuntimeError> {
+        let mut report = LoadReport::default();
+
+        let scripts: Vec<Script> = {
+            let doc = self.dom.borrow();
+            collect_scripts(&doc)
+        };
+        for script in scripts {
+            match script {
+                Script::Inline(source) => self.eval_page_script(&source, &mut report.scripts),
+                Script::External(src) => {
+                    // classic 外链脚本是阻塞语义:取回来立刻按序执行
+                    let resolved = self.resolve_url(&src);
+                    let request = HttpRequest {
+                        url: resolved.clone(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                    };
+                    match net.fetch(request).await {
+                        Ok(resp) if (200..300).contains(&resp.status) => {
+                            let source = String::from_utf8_lossy(&resp.body).into_owned();
+                            self.eval_page_script(&source, &mut report.scripts);
+                        }
+                        Ok(resp) => {
+                            let msg = format!("script {resolved}: HTTP {}", resp.status);
+                            tracing::warn!(target: "surl_js", "{msg}");
+                            report.scripts.errors.push(msg);
+                        }
+                        Err(e) => {
+                            let msg = format!("script {resolved}: {e}");
+                            tracing::warn!(target: "surl_js", "{msg}");
+                            report.scripts.errors.push(msg);
+                        }
+                    }
+                    self.pump_jobs()?;
+                }
+                Script::Module => {
+                    tracing::warn!(target: "surl_js", "skipping module script (M3)");
+                    report.scripts.skipped_module += 1;
+                }
+            }
+        }
+
+        self.eval("__surl_fireReady()")?;
+        self.settle_into(net, &opts, &mut report.settle).await?;
+        Ok(report)
+    }
+
+    /// 事件循环跑到静止。可单独调用(比如 eval 一段代码后收尾)。
+    pub async fn settle(
+        &self,
+        net: &dyn HttpClient,
+        opts: SettleOptions,
+    ) -> Result<SettleReport, RuntimeError> {
+        let mut report = SettleReport::default();
+        self.settle_into(net, &opts, &mut report).await?;
+        Ok(report)
+    }
+
+    async fn settle_into(
+        &self,
+        net: &dyn HttpClient,
+        opts: &SettleOptions,
+        report: &mut SettleReport,
+    ) -> Result<(), RuntimeError> {
+        let start_ms = self.event_loop.borrow().now_ms;
+        let deadline = start_ms + opts.max_virtual_time_ms;
+        let mut inflight: FuturesUnordered<_> = FuturesUnordered::new();
+        let mut tasks: usize = 0;
+
+        loop {
+            self.pump_jobs()?;
+
+            if tasks >= opts.max_tasks {
+                report.hit_task_limit = true;
+                break;
+            }
+
+            // 新排队的请求先起飞(不阻塞后续定时器判断)
+            for (id, req) in self.event_loop.borrow_mut().take_requests() {
+                report.fetches += 1;
+                inflight.push(async move { (id, net.fetch(req).await) });
+            }
+
+            // 1. 到点的定时器
+            let ready = self.event_loop.borrow_mut().pop_ready_timer();
+            if let Some(timer) = ready {
+                tasks += 1;
+                report.timers_fired += 1;
+                if let Err(e) = self.call_trampoline("__surl_runTimer", (timer.0,)) {
+                    tracing::warn!(target: "surl_js", "timer callback error: {e}");
+                    report.errors.push(e.to_string());
+                }
+                continue;
+            }
+
+            // 2. 在途网络:确定性契约——网络完成优先于时钟快进
+            if !inflight.is_empty() {
+                let (id, result) = inflight.next().await.expect("non-empty inflight");
+                tasks += 1;
+                if let Err(e) = self.deliver_fetch(id, result) {
+                    tracing::warn!(target: "surl_js", "fetch delivery error: {e}");
+                    report.errors.push(e.to_string());
+                }
+                continue;
+            }
+
+            // 3. 时钟快进到下一个定时器
+            let next_at = self.event_loop.borrow().next_timer_at();
+            if let Some(at) = next_at {
+                if at > deadline {
+                    report.abandoned_timers = self.event_loop.borrow().timers_remaining();
+                    break;
+                }
+                self.event_loop.borrow_mut().now_ms = at;
+                continue;
+            }
+
+            break; // 静止:所有队列空、无网络、无定时器
+        }
+
+        report.virtual_elapsed_ms = self.event_loop.borrow().now_ms - start_ms;
+        Ok(())
+    }
+
+    /// fetch 完成 → 调 JS 侧蹦床,resolve 对应 Promise。
+    fn deliver_fetch(&self, id: u32, result: HttpResult) -> Result<(), RuntimeError> {
+        match result {
+            Ok(resp) => {
+                let body = String::from_utf8_lossy(&resp.body).into_owned();
+                let headers: Vec<Vec<String>> = resp
+                    .headers
+                    .into_iter()
+                    .map(|(k, v)| vec![k, v])
+                    .collect();
+                self.call_trampoline(
+                    "__surl_fetchDone",
+                    (
+                        id,
+                        rquickjs::Undefined,
+                        resp.status,
+                        resp.status_text,
+                        resp.url,
+                        headers,
+                        body,
+                    ),
+                )
+            }
+            Err(message) => self.call_trampoline("__surl_fetchDone", (id, message)),
+        }
+    }
+
+    fn call_trampoline<A>(&self, name: &str, args: A) -> Result<(), RuntimeError>
+    where
+        A: for<'js> rquickjs::function::IntoArgs<'js>,
+    {
+        self.ctx.with(|ctx| {
+            let func: Function = ctx.globals().get(name)?;
+            let result: Result<(), rquickjs::Error> = func.call(args);
+            result.catch(&ctx).map_err(|caught| caught_to_error(caught, name))
+        })
+    }
+
+    fn eval_page_script(&self, source: &str, report: &mut ScriptReport) {
+        match self.eval(source) {
+            Ok(()) => report.executed += 1,
+            Err(e) => {
+                // 浏览器语义:单个脚本抛错不中止页面
+                tracing::warn!(target: "surl_js", "script error: {e}");
+                report.errors.push(e.to_string());
+            }
+        }
+        if let Err(e) = self.pump_jobs() {
+            report.errors.push(e.to_string());
+        }
+    }
+
+    fn resolve_url(&self, raw: &str) -> String {
+        match &self.base {
+            Some(base) => base
+                .join(raw)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| raw.to_owned()),
+            None => raw.to_owned(),
+        }
     }
 
     /// 只读访问当前 DOM(语义提取等)。
@@ -192,7 +433,13 @@ fn eval_caught(
     label: &str,
 ) -> Result<(), RuntimeError> {
     let result: Result<(), rquickjs::Error> = ctx.eval::<(), _>(source);
-    result.catch(ctx).map_err(|caught| match caught {
+    result
+        .catch(ctx)
+        .map_err(|caught| caught_to_error(caught, label))
+}
+
+fn caught_to_error(caught: CaughtError<'_>, label: &str) -> RuntimeError {
+    match caught {
         CaughtError::Exception(ex) => {
             let msg = ex.message().unwrap_or_else(|| "<no message>".into());
             let stack = ex.stack().map(|s| format!("\n{s}")).unwrap_or_default();
@@ -200,7 +447,7 @@ fn eval_caught(
         }
         CaughtError::Value(v) => RuntimeError::Js(format!("{label}: threw {v:?}")),
         CaughtError::Error(e) => RuntimeError::Engine(e),
-    })
+    }
 }
 
 #[cfg(test)]

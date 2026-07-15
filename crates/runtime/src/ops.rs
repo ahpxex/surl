@@ -12,9 +12,12 @@ use rquickjs::{Ctx, Exception, Function, Object, Result};
 use surl_dom::{Document, LocalName, NodeData, NodeId, QualName, ns};
 
 use crate::ConsoleMessage;
+use crate::event_loop::{EventLoopState, TimerId};
+use crate::net::HttpRequest;
 
 pub type SharedDom = Rc<RefCell<Document>>;
 pub type ConsoleSink = Rc<RefCell<Vec<ConsoleMessage>>>;
+pub type SharedEventLoop = Rc<RefCell<EventLoopState>>;
 
 const NULL_ID: f64 = 0.0;
 
@@ -35,8 +38,14 @@ fn nid(ctx: &Ctx<'_>, doc: &Document, raw: f64) -> Result<NodeId> {
     Ok(id)
 }
 
-/// 把全部 DOM op 注册到 `__surl_dom` 命名空间。
-pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<()> {
+/// 把全部原生 op 注册到 `__surl_dom` 命名空间。
+pub fn install(
+    ctx: &Ctx<'_>,
+    dom: &SharedDom,
+    console: &ConsoleSink,
+    event_loop: &SharedEventLoop,
+    base_url: Option<&str>,
+) -> Result<()> {
     let obj = Object::new(ctx.clone())?;
 
     macro_rules! op {
@@ -527,6 +536,89 @@ pub fn install(ctx: &Ctx<'_>, dom: &SharedDom, console: &ConsoleSink) -> Result<
                 let id = nid(&ctx, &doc, id)?;
                 doc.set_inner_html(id, &html);
                 Ok(())
+            }
+        );
+    }
+
+    // ---- URL 解析(url crate;QuickJS 没有内置 URL)----
+    op!("urlResolve", |input: String, base: String| -> String {
+        let parsed = if base.is_empty() {
+            url::Url::parse(&input)
+        } else {
+            url::Url::parse(&base).and_then(|b| b.join(&input))
+        };
+        match parsed {
+            Ok(u) => {
+                let origin = u.origin();
+                let origin_str = match &origin {
+                    url::Origin::Opaque(_) => "null".to_owned(),
+                    o => o.ascii_serialization(),
+                };
+                serde_json::json!({
+                    "href": u.as_str(),
+                    "origin": origin_str,
+                    "protocol": format!("{}:", u.scheme()),
+                    "hostname": u.host_str().unwrap_or(""),
+                    "host": match u.port() {
+                        Some(p) => format!("{}:{}", u.host_str().unwrap_or(""), p),
+                        None => u.host_str().unwrap_or("").to_owned(),
+                    },
+                    "port": u.port().map(|p| p.to_string()).unwrap_or_default(),
+                    "pathname": u.path(),
+                    "search": u.query().map(|q| format!("?{q}")).unwrap_or_default(),
+                    "hash": u.fragment().map(|f| format!("#{f}")).unwrap_or_default(),
+                })
+                .to_string()
+            }
+            Err(_) => String::new(),
+        }
+    });
+
+    // ---- 事件循环:定时器 / 虚拟时钟 / fetch 队列 ----
+    obj.set("baseUrl", base_url.unwrap_or(""))?;
+    {
+        let el = event_loop.clone();
+        op!("clockNow", move || el.borrow().now_ms as f64);
+    }
+    {
+        let el = event_loop.clone();
+        op!("timerSchedule", move |delay_ms: f64, repeating: bool| {
+            let delay = if delay_ms.is_finite() && delay_ms > 0.0 {
+                delay_ms as u64
+            } else {
+                0
+            };
+            el.borrow_mut().schedule_timer(delay, repeating).0 as f64
+        });
+    }
+    {
+        let el = event_loop.clone();
+        op!("timerClear", move |id: f64| {
+            el.borrow_mut().clear_timer(TimerId(id as u32));
+        });
+    }
+    {
+        let el = event_loop.clone();
+        op!(
+            "fetchStart",
+            move |url: String,
+                  method: String,
+                  headers: Vec<Vec<String>>,
+                  has_body: bool,
+                  body: String| {
+                let req = HttpRequest {
+                    url,
+                    method,
+                    headers: headers
+                        .into_iter()
+                        .filter_map(|kv| {
+                            let mut it = kv.into_iter();
+                            Some((it.next()?, it.next()?))
+                        })
+                        .collect(),
+                    body: has_body.then_some(body),
+                };
+                el.borrow_mut().queue_request(req) as f64
             }
         );
     }

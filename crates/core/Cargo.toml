@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 surl-dom.workspace = true
+surl-runtime.workspace = true
 reqwest.workspace = true
 url.workspace = true
 serde.workspace = true
