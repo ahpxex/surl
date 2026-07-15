@@ -12,6 +12,19 @@ new_key_type! {
     pub struct NodeId;
 }
 
+impl NodeId {
+    /// 跨 FFI/JS 边界的数字表示。arena 槽位不复用时值 < 2^53,可安全放进
+    /// JS Number。0 保留作 null 哨兵(slotmap 的占用版本号从 1 起)。
+    pub fn to_ffi(self) -> u64 {
+        use slotmap::Key;
+        self.data().as_ffi()
+    }
+
+    pub fn from_ffi(raw: u64) -> NodeId {
+        slotmap::KeyData::from_ffi(raw).into()
+    }
+}
+
 /// 节点数据。Document/Fragment 是容器根,Element 带标签与属性,其余是叶子。
 #[derive(Debug)]
 pub enum NodeData {

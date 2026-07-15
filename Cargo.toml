@@ -11,6 +11,10 @@ license = "MIT"
 # 内部 crate
 surl-core = { path = "crates/core" }
 surl-dom = { path = "crates/dom" }
+surl-runtime = { path = "crates/runtime" }
+
+# JS 引擎(quickjs-ng,经 rquickjs FFI 绑定)
+rquickjs = "0.12"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
