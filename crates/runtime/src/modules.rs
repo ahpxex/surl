@@ -117,10 +117,10 @@ pub fn scan_specifiers(source: &str) -> Vec<String> {
             if let Some(spec) = read_string_literal(window[fpos + 6..].trim_start()) {
                 out.push(spec);
             }
-        } else if let Some(fpos) = window.find("from\"") {
-            if let Some(spec) = read_string_literal(&window[fpos + 4..]) {
-                out.push(spec);
-            }
+        } else if let Some(fpos) = window.find("from\"")
+            && let Some(spec) = read_string_literal(&window[fpos + 4..])
+        {
+            out.push(spec);
         }
     }
     out.sort();
