@@ -1,0 +1,31 @@
+{
+  "dom/nodes/Element-getElementsByClassName.html": {
+    "Interface should be correct.": "FAIL: NodeList is not defined",
+    "getElementsByClassName() should be a live collection": "FAIL: HTMLCollection is not defined"
+  },
+  "dom/nodes/Element-tagName.html": {
+    "tagName should be updated when changing ownerDocument (createDocument with prefix)": "FAIL: assert_equals: tagName should be lowercase in XML expected \"foo:div\" but got \"FOO:DIV\"",
+    "tagName should be updated when changing ownerDocument (createDocument without prefix)": "FAIL: assert_equals: tagName should be lowercase in XML expected \"div\" but got \"DIV\""
+  },
+  "dom/nodes/Node-appendChild.html": {
+    "Adopting a non-orphan": "FAIL: cannot read property 'document' of undefined",
+    "Adopting an orphan": "FAIL: cannot read property 'document' of undefined",
+    "Appending a document": "FAIL: cannot read property 'document' of undefined"
+  },
+  "dom/nodes/Node-cloneNode.html": {
+    "createAttribute": "FAIL: not a function",
+    "createAttributeNS": "FAIL: not a function",
+    "implementation.createDocument": "FAIL: assert_equals: contentType equality expected \"text/html\" but got \"application/xml\""
+  },
+  "dom/nodes/Node-removeChild.html": {
+    "Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.": "FAIL: cannot read property 'document' of undefined",
+    "Calling removeChild on a element from a frame document with no children should throw NOT_FOUND_ERR.": "FAIL: cannot read property 'document' of undefined",
+    "Calling removeChild on a text from a frame document with no children should throw NOT_FOUND_ERR.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a detached comment from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a detached element from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a detached text from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a non-detached comment from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a non-detached element from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined",
+    "Passing a non-detached text from a frame document to removeChild should not affect it.": "FAIL: cannot read property 'document' of undefined"
+  }
+}

@@ -199,6 +199,16 @@ impl PageRuntime {
             .with(|ctx| eval_caught(&ctx, source, "surl:script"))
     }
 
+    /// 求值一个表达式,结果转成 String 带回(测试与诊断用)。
+    pub fn eval_string(&self, source: &str) -> Result<String, RuntimeError> {
+        self.ctx.with(|ctx| {
+            let result: Result<String, rquickjs::Error> = ctx.eval(source);
+            result
+                .catch(&ctx)
+                .map_err(|caught| caught_to_error(caught, "surl:eval_string"))
+        })
+    }
+
     /// 手动泵微任务队列直到清空(M2 事件循环的雏形)。
     /// 返回执行的 job 数。
     pub fn pump_jobs(&self) -> Result<usize, RuntimeError> {
@@ -768,16 +778,21 @@ mod tests {
     #[test]
     fn hierarchy_cycle_rejected() {
         let rt = runtime(r#"<!doctype html><div id="a"><div id="b"></div></div>"#);
-        let err = rt
-            .eval(
-                r#"
-                const a = document.getElementById("a");
-                const b = document.getElementById("b");
+        rt.eval(
+            r#"
+            const a = document.getElementById("a");
+            const b = document.getElementById("b");
+            let name = "(no throw)";
+            try {
                 b.appendChild(a);
-            "#,
-            )
-            .unwrap_err();
-        assert!(err.to_string().contains("HierarchyRequestError"), "{err}");
+            } catch (e) {
+                name = e.name;
+                if (!(e instanceof DOMException)) name += " (not a DOMException)";
+            }
+            if (name !== "HierarchyRequestError") throw new Error("got: " + name);
+        "#,
+        )
+        .unwrap();
     }
 
     #[test]

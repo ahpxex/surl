@@ -13,10 +13,20 @@
     let node = cache.get(id);
     if (node) return node;
     const type = dom.nodeType(id);
-    if (type === 1) node = new (elementClassFor(dom.tagName(id)))(id);
-    else if (type === 3) node = new Text(id);
+    if (type === 1) {
+      const meta = dom.elementMeta(id);
+      if (meta[0] === "http://www.w3.org/1999/xhtml") {
+        node = new (elementClassFor(meta[2]))(id);
+      } else if (meta[0] === "http://www.w3.org/2000/svg") {
+        node = new SVGElement(id);
+      } else {
+        node = new Element(id);
+      }
+    } else if (type === 3) node = new Text(id);
+    else if (type === 7) node = new ProcessingInstruction(id);
     else if (type === 8) node = new Comment(id);
     else if (type === 9) node = new DocumentNode(id);
+    else if (type === 10) node = new DocumentType(id);
     else if (type === 11) node = new DocumentFragment(id);
     else node = new Node(id);
     cache.set(id, node);
@@ -28,6 +38,44 @@
     throw new TypeError((what || "argument") + " is not a Node");
   }
 
+  // ---- DOMException ----
+
+  const DOM_EXCEPTION_CODES = {
+    IndexSizeError: 1, HierarchyRequestError: 3, WrongDocumentError: 4,
+    InvalidCharacterError: 5, NoModificationAllowedError: 7, NotFoundError: 8,
+    NotSupportedError: 9, InUseAttributeError: 10, InvalidStateError: 11,
+    SyntaxError: 12, InvalidModificationError: 13, NamespaceError: 14,
+    InvalidAccessError: 15, SecurityError: 18, NetworkError: 19, AbortError: 20,
+    URLMismatchError: 21, QuotaExceededError: 22, TimeoutError: 23,
+    InvalidNodeTypeError: 24, DataCloneError: 25,
+  };
+  class DOMException extends Error {
+    constructor(message, name) {
+      super(message === undefined ? "" : String(message));
+      this.name = name === undefined ? "Error" : String(name);
+    }
+    get code() {
+      return DOM_EXCEPTION_CODES[this.name] || 0;
+    }
+  }
+  DOMException.INDEX_SIZE_ERR = 1;
+  DOMException.HIERARCHY_REQUEST_ERR = 3;
+  DOMException.INVALID_CHARACTER_ERR = 5;
+  DOMException.NOT_FOUND_ERR = 8;
+  DOMException.NOT_SUPPORTED_ERR = 9;
+  DOMException.INVALID_STATE_ERR = 11;
+  DOMException.SYNTAX_ERR = 12;
+  g.DOMException = DOMException;
+
+  // Rust op 用带前缀的 TypeError 报 DOM 错误;在 JS 边界翻译成 DOMException
+  function rethrowDom(e) {
+    if (e instanceof TypeError) {
+      const m = /^([A-Z][A-Za-z]*Error): (.*)$/.exec(e.message || "");
+      if (m && DOM_EXCEPTION_CODES[m[1]]) throw new DOMException(m[2], m[1]);
+    }
+    throw e;
+  }
+
   // ---- 事件系统(纯 JS 侧:监听器不跨 FFI)----
 
   class Event {
@@ -36,14 +84,20 @@
       this.type = String(type);
       this.bubbles = !!init.bubbles;
       this.cancelable = !!init.cancelable;
-      this.defaultPrevented = false;
+      this.composed = !!init.composed;
       this.target = null;
       this.currentTarget = null;
       this.eventPhase = 0;
       this._stopped = false;
       this._immediateStopped = false;
+      this._canceled = false;
+      this._initialized = true;
+      this._dispatching = false;
       this.isTrusted = false;
       this.timeStamp = 0;
+    }
+    get defaultPrevented() {
+      return this._canceled;
     }
     stopPropagation() {
       this._stopped = true;
@@ -53,14 +107,149 @@
       this._immediateStopped = true;
     }
     preventDefault() {
-      if (this.cancelable) this.defaultPrevented = true;
+      if (this.cancelable) this._canceled = true;
+    }
+    // 传统 API(规范仍要求)
+    get cancelBubble() {
+      return this._stopped;
+    }
+    set cancelBubble(v) {
+      if (v) this._stopped = true;
+    }
+    get returnValue() {
+      return !this._canceled;
+    }
+    set returnValue(v) {
+      if (v === false) this.preventDefault();
+    }
+    initEvent(type, bubbles, cancelable) {
+      if (this._dispatching) return;
+      this._initialized = true;
+      this._stopped = false;
+      this._immediateStopped = false;
+      this._canceled = false;
+      this.isTrusted = false;
+      this.target = null;
+      this.type = String(type);
+      this.bubbles = !!bubbles;
+      this.cancelable = !!cancelable;
+    }
+    composedPath() {
+      if (!this._dispatching || !this.target) return [];
+      const path = [this.target];
+      let p = this.target.parentNode ? this.target.parentNode : null;
+      while (p) {
+        path.push(p);
+        p = p.parentNode;
+      }
+      return path;
     }
   }
+  Event.NONE = 0;
+  Event.CAPTURING_PHASE = 1;
+  Event.AT_TARGET = 2;
+  Event.BUBBLING_PHASE = 3;
+
   class CustomEvent extends Event {
     constructor(type, init) {
       super(type, init);
       this.detail = (init && init.detail) !== undefined ? init.detail : null;
     }
+    initCustomEvent(type, bubbles, cancelable, detail) {
+      this.initEvent(type, bubbles, cancelable);
+      this.detail = detail === undefined ? null : detail;
+    }
+  }
+
+  // 事件类家族(结构性:UI 事件不产生真实输入,类存在是为 instanceof 与
+  // createEvent 的规范表)
+  class UIEvent extends Event {
+    constructor(type, init) {
+      super(type, init);
+      this.view = (init && init.view) || null;
+      this.detail = (init && init.detail) || 0;
+    }
+    initUIEvent(type, bubbles, cancelable, view, detail) {
+      this.initEvent(type, bubbles, cancelable);
+      this.view = view || null;
+      this.detail = detail || 0;
+    }
+  }
+  class MouseEvent extends UIEvent {
+    initMouseEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class KeyboardEvent extends UIEvent {
+    initKeyboardEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class FocusEvent extends UIEvent {}
+  class CompositionEvent extends UIEvent {
+    initCompositionEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class TextEvent extends UIEvent {
+    initTextEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class InputEvent extends UIEvent {}
+  class DragEvent extends MouseEvent {}
+  class PointerEvent extends MouseEvent {}
+  class WheelEvent extends MouseEvent {}
+  class MessageEvent extends Event {
+    initMessageEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class StorageEvent extends Event {
+    initStorageEvent(type, bubbles, cancelable) {
+      this.initEvent(type, bubbles, cancelable);
+    }
+  }
+  class HashChangeEvent extends Event {}
+  class PopStateEvent extends Event {}
+  class BeforeUnloadEvent extends Event {}
+  class DeviceMotionEvent extends Event {}
+  class DeviceOrientationEvent extends Event {}
+  class ErrorEvent extends Event {}
+  class ProgressEvent extends Event {}
+  class TransitionEvent extends Event {}
+  class AnimationEvent extends Event {}
+  class PageTransitionEvent extends Event {}
+
+  // createEvent 的规范别名表(比较不区分大小写)
+  const CREATE_EVENT_TABLE = {
+    beforeunloadevent: BeforeUnloadEvent,
+    compositionevent: CompositionEvent,
+    customevent: CustomEvent,
+    devicemotionevent: DeviceMotionEvent,
+    deviceorientationevent: DeviceOrientationEvent,
+    dragevent: DragEvent,
+    event: Event,
+    events: Event,
+    htmlevents: Event,
+    svgevents: Event,
+    focusevent: FocusEvent,
+    hashchangeevent: HashChangeEvent,
+    keyboardevent: KeyboardEvent,
+    messageevent: MessageEvent,
+    mouseevent: MouseEvent,
+    mouseevents: MouseEvent,
+    storageevent: StorageEvent,
+    textevent: TextEvent,
+    uievent: UIEvent,
+    uievents: UIEvent,
+  };
+  for (const cls of [UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent,
+    TextEvent, InputEvent, DragEvent, PointerEvent, WheelEvent, MessageEvent,
+    StorageEvent, HashChangeEvent, PopStateEvent, BeforeUnloadEvent,
+    DeviceMotionEvent, DeviceOrientationEvent, ErrorEvent, ProgressEvent,
+    TransitionEvent, AnimationEvent, PageTransitionEvent]) {
+    g[cls.name] = cls;
   }
 
   class EventTarget {
@@ -104,8 +293,18 @@
       }
     }
     dispatchEvent(event) {
+      if (!(event instanceof Event)) {
+        throw new TypeError("dispatchEvent: argument is not an Event");
+      }
+      if (event._dispatching || !event._initialized) {
+        throw new DOMException(
+          "The event is already being dispatched or has not been initialized",
+          "InvalidStateError",
+        );
+      }
+      event._dispatching = true;
       event.target = this;
-      // 组装祖先链(仅 Node 有;window 单独处理)
+      // 祖先链(仅 Node 有;window 单独处理)
       const path = [];
       if (this instanceof Node) {
         let p = this.parentNode;
@@ -114,25 +313,37 @@
           p = p.parentNode;
         }
       }
-      event.eventPhase = 1; // CAPTURING_PHASE
+      // capture 阶段:祖先(远→近),然后 target 上的 capture 监听器。
+      // 现代规范:target 上两类监听器都以 AT_TARGET 相位触发,但 capture
+      // 监听器属于 capture 遍,先于非 capture——顺序是可观测的。
+      event.eventPhase = Event.CAPTURING_PHASE;
       for (let i = path.length - 1; i >= 0 && !event._stopped; i--) {
         event.currentTarget = path[i];
         path[i]._invokeListeners(event, 1);
       }
       if (!event._stopped) {
-        event.eventPhase = 2; // AT_TARGET
+        event.eventPhase = Event.AT_TARGET;
         event.currentTarget = this;
-        this._invokeListeners(event, 2);
+        this._invokeListeners(event, 1);
+      }
+      if (!event._stopped) {
+        event.eventPhase = Event.AT_TARGET;
+        event.currentTarget = this;
+        this._invokeListeners(event, 3);
       }
       if (event.bubbles) {
-        event.eventPhase = 3; // BUBBLING_PHASE
+        event.eventPhase = Event.BUBBLING_PHASE;
         for (let i = 0; i < path.length && !event._stopped; i++) {
           event.currentTarget = path[i];
           path[i]._invokeListeners(event, 3);
         }
       }
-      event.eventPhase = 0;
+      // 派发收尾:相位复位、传播标志清零(同一事件可再次派发)
+      event.eventPhase = Event.NONE;
       event.currentTarget = null;
+      event._dispatching = false;
+      event._stopped = false;
+      event._immediateStopped = false;
       return !event.defaultPrevented;
     }
   }
@@ -171,25 +382,45 @@
       return wrap(dom.prevSibling(this._id));
     }
     get ownerDocument() {
-      return g.document || null;
+      if (this.nodeType === 9) return null;
+      // 挂在树上:树根 document 即 owner;游离:记住创建时的 document
+      const root = dom.rootDocument(this._id);
+      if (root) return wrap(root);
+      return this._ownerDoc || g.document || null;
     }
     hasChildNodes() {
       return dom.firstChild(this._id) !== 0;
     }
     appendChild(child) {
-      dom.appendChild(this._id, unwrap(child, "child"));
+      try {
+        dom.appendChild(this._id, unwrap(child, "child"));
+      } catch (e) {
+        rethrowDom(e);
+      }
       return child;
     }
     insertBefore(node, reference) {
-      dom.insertBefore(
-        this._id,
-        unwrap(node, "node"),
-        reference == null ? 0 : unwrap(reference, "reference"),
-      );
+      // WebIDL:第二个参数不可省略(显式 null/undefined 允许)
+      if (arguments.length < 2) {
+        throw new TypeError("insertBefore: 2 arguments required");
+      }
+      try {
+        dom.insertBefore(
+          this._id,
+          unwrap(node, "node"),
+          reference == null ? 0 : unwrap(reference, "reference"),
+        );
+      } catch (e) {
+        rethrowDom(e);
+      }
       return node;
     }
     removeChild(child) {
-      dom.removeChild(this._id, unwrap(child, "child"));
+      try {
+        dom.removeChild(this._id, unwrap(child, "child"));
+      } catch (e) {
+        rethrowDom(e);
+      }
       return child;
     }
     replaceChild(newChild, oldChild) {
@@ -213,7 +444,8 @@
       return false;
     }
     get textContent() {
-      return dom.textContent(this._id);
+      const v = dom.textContent(this._id);
+      return v == null ? null : v;
     }
     set textContent(value) {
       dom.setTextContent(this._id, value == null ? "" : String(value));
@@ -257,13 +489,47 @@
   }
   class Text extends CharacterData {}
   class Comment extends CharacterData {}
+  class ProcessingInstruction extends CharacterData {
+    get target() {
+      return dom.nodeName(this._id);
+    }
+  }
+  class DocumentType extends Node {
+    get name() {
+      return dom.nodeName(this._id);
+    }
+    get publicId() {
+      return "";
+    }
+    get systemId() {
+      return "";
+    }
+  }
 
   class Element extends Node {
     get tagName() {
       return dom.tagName(this._id);
     }
     get localName() {
-      return dom.tagName(this._id).toLowerCase();
+      return dom.elementMeta(this._id)[2];
+    }
+    get namespaceURI() {
+      return dom.elementMeta(this._id)[0] || null;
+    }
+    get prefix() {
+      return dom.elementMeta(this._id)[1] || null;
+    }
+    get attributes() {
+      return dom.attributes(this._id).map(function (row) {
+        return {
+          namespaceURI: row[0] || null,
+          prefix: row[1] || null,
+          localName: row[2],
+          name: row[1] ? row[1] + ":" + row[2] : row[2],
+          value: row[3],
+          specified: true,
+        };
+      });
     }
     getAttribute(name) {
       // 原生 op 的 None 过来是 undefined,DOM 规范要求 null
@@ -338,50 +604,149 @@
       );
     }
     get classList() {
-      const self = this;
-      return {
-        _all() {
-          return (self.getAttribute("class") || "").split(/\s+/).filter(Boolean);
-        },
-        get length() {
-          return this._all().length;
-        },
-        item(i) {
-          return this._all()[i] || null;
-        },
-        contains(token) {
-          return this._all().includes(String(token));
-        },
-        add(...tokens) {
-          const all = this._all();
-          for (const t of tokens) if (!all.includes(String(t))) all.push(String(t));
-          self.setAttribute("class", all.join(" "));
-        },
-        remove(...tokens) {
-          const drop = tokens.map(String);
-          self.setAttribute(
-            "class",
-            this._all().filter((c) => !drop.includes(c)).join(" "),
-          );
-        },
-        toggle(token, force) {
-          token = String(token);
-          const has = this.contains(token);
-          const want = force === undefined ? !has : !!force;
-          if (want && !has) this.add(token);
-          if (!want && has) this.remove(token);
-          return want;
-        },
-        toString() {
-          return self.getAttribute("class") || "";
-        },
-      };
+      if (!this._classList) {
+        const list = new DOMTokenList(this);
+        // 索引访问(classList[0])经 Proxy;方法绑定到真实例上
+        this._classList = new Proxy(list, {
+          get(target, prop) {
+            if (typeof prop === "string" && /^\d+$/.test(prop)) {
+              const v = target.item(Number(prop));
+              return v === null ? undefined : v;
+            }
+            const v = Reflect.get(target, prop, target);
+            return typeof v === "function" ? v.bind(target) : v;
+          },
+          set(target, prop, value) {
+            return Reflect.set(target, prop, value, target);
+          },
+          has(target, prop) {
+            if (typeof prop === "string" && /^\d+$/.test(prop)) {
+              return Number(prop) < target.length;
+            }
+            return Reflect.has(target, prop);
+          },
+        });
+      }
+      return this._classList;
+    }
+    set classList(v) {
+      // [PutForwards=value]:赋值转发到 class 属性
+      this.setAttribute("class", String(v));
     }
     get style() {
       if (!this._style) this._style = makeStyle(this);
       return this._style;
     }
   }
+
+  // DOMTokenList(有序去重集,底层是 class 属性)
+  function validateToken(token) {
+    token = String(token);
+    if (token === "") throw new DOMException("token is empty", "SyntaxError");
+    if (/[\t\n\f\r ]/.test(token))
+      throw new DOMException("token contains whitespace", "InvalidCharacterError");
+    return token;
+  }
+  class DOMTokenList {
+    constructor(el) {
+      this._el = el;
+    }
+    _all() {
+      const raw = this._el.getAttribute("class");
+      if (raw == null) return [];
+      const seen = [];
+      for (const t of raw.split(/[\t\n\f\r ]+/)) {
+        if (t && !seen.includes(t)) seen.push(t);
+      }
+      return seen;
+    }
+    _write(tokens) {
+      // 规范 update steps:attribute 本就缺失且集合为空时,不凭空创建
+      if (tokens.length === 0 && this._el.getAttribute("class") === null) return;
+      this._el.setAttribute("class", tokens.join(" "));
+    }
+    get length() {
+      return this._all().length;
+    }
+    item(i) {
+      return this._all()[i] ?? null;
+    }
+    contains(token) {
+      return this._all().includes(String(token));
+    }
+    add(...tokens) {
+      const valid = tokens.map(validateToken);
+      const all = this._all();
+      for (const t of valid) if (!all.includes(t)) all.push(t);
+      this._write(all);
+    }
+    remove(...tokens) {
+      const drop = tokens.map(validateToken);
+      this._write(this._all().filter((c) => !drop.includes(c)));
+    }
+    toggle(token, force) {
+      token = validateToken(token);
+      const has = this.contains(token);
+      if (has) {
+        if (force === undefined || force === false) {
+          this.remove(token);
+          return false;
+        }
+        return true;
+      }
+      if (force === undefined || force === true) {
+        this.add(token);
+        return true;
+      }
+      return false;
+    }
+    replace(oldToken, newToken) {
+      // 规范:两个参数先一起查空串(SyntaxError),再查空白(InvalidCharacterError)
+      oldToken = String(oldToken);
+      newToken = String(newToken);
+      if (oldToken === "" || newToken === "") {
+        throw new DOMException("token is empty", "SyntaxError");
+      }
+      if (/[\t\n\f\r ]/.test(oldToken) || /[\t\n\f\r ]/.test(newToken)) {
+        throw new DOMException("token contains whitespace", "InvalidCharacterError");
+      }
+      const all = this._all();
+      const idx = all.indexOf(oldToken);
+      if (idx < 0) return false;
+      all[idx] = newToken;
+      // 替换后去重(ordered set 语义)
+      this._write(all.filter((t, i) => all.indexOf(t) === i));
+      return true;
+    }
+    supports() {
+      throw new TypeError("classList has no supported tokens");
+    }
+    get value() {
+      return this._el.getAttribute("class") ?? "";
+    }
+    set value(v) {
+      this._el.setAttribute("class", String(v));
+    }
+    toString() {
+      return this.value;
+    }
+    forEach(fn, thisArg) {
+      this._all().forEach((t, i) => fn.call(thisArg, t, i, this));
+    }
+    keys() {
+      return this._all().keys();
+    }
+    values() {
+      return this._all().values();
+    }
+    entries() {
+      return this._all().entries();
+    }
+    [Symbol.iterator]() {
+      return this._all().values();
+    }
+  }
+  g.DOMTokenList = DOMTokenList;
 
   // style 属性 <-> 内联 style attribute 的极简桥。支持 el.style.color = "red"
   // (camelCase 转 kebab)与 setProperty/getPropertyValue/removeProperty/cssText。
@@ -449,37 +814,77 @@
 
   class DocumentNode extends Node {
     get documentElement() {
-      return wrap(dom.documentElement());
+      return wrap(dom.documentElement(this._id));
     }
     get body() {
-      return wrap(dom.body());
+      return wrap(dom.body(this._id));
     }
     get head() {
-      return wrap(dom.head());
+      return wrap(dom.head(this._id));
+    }
+    get doctype() {
+      for (const child of this.childNodes) {
+        if (child.nodeType === 10) return child;
+      }
+      return null;
     }
     get nodeName() {
       return "#document";
     }
+    _adopt(node) {
+      node._ownerDoc = this;
+      return node;
+    }
     getElementById(id) {
-      return wrap(dom.getElementById(String(id)));
+      return wrap(dom.getElementById(this._id, String(id)));
     }
     createElement(tag) {
-      return wrap(dom.createElement(String(tag)));
+      return this._adopt(wrap(dom.createElement(String(tag))));
     }
     createElementNS(ns, tag) {
-      return wrap(dom.createElementNS(ns == null ? "" : String(ns), String(tag)));
+      return this._adopt(wrap(dom.createElementNS(ns == null ? "" : String(ns), String(tag))));
     }
     createTextNode(text) {
-      return wrap(dom.createText(String(text)));
+      return this._adopt(wrap(dom.createText(String(text))));
     }
     createComment(text) {
-      return wrap(dom.createComment(String(text)));
+      return this._adopt(wrap(dom.createComment(String(text))));
+    }
+    createProcessingInstruction(target, data) {
+      return this._adopt(wrap(dom.createPI(String(target), String(data))));
     }
     createDocumentFragment() {
-      return wrap(dom.createFragment());
+      return this._adopt(wrap(dom.createFragment()));
     }
-    createEvent() {
-      return new Event("");
+    createCDATASection(data) {
+      // XML 专属;结构上等同文本节点(不单设 CDATA 类型)
+      return this._adopt(wrap(dom.createText(String(data))));
+    }
+    get characterSet() {
+      return "UTF-8";
+    }
+    get charset() {
+      return "UTF-8";
+    }
+    get inputEncoding() {
+      return "UTF-8";
+    }
+    get contentType() {
+      return this._contentType || "text/html";
+    }
+    createEvent(interfaceName) {
+      const cls = CREATE_EVENT_TABLE[String(interfaceName).toLowerCase()];
+      if (!cls) {
+        throw new DOMException(
+          "createEvent: unsupported interface " + interfaceName,
+          "NotSupportedError",
+        );
+      }
+      const ev = new cls("");
+      // createEvent 造出的事件未初始化,须经 initEvent 才能派发
+      ev._initialized = false;
+      ev.type = "";
+      return ev;
     }
     querySelector(sel) {
       return wrap(dom.querySelector(this._id, String(sel)));
@@ -545,21 +950,54 @@
       return null;
     }
   }
+  // HTML 规范的 tag → 接口全表(与 WPT Node-cloneNode 的期望一致)
   const TAG_CLASS_NAMES = {
-    a: "HTMLAnchorElement", area: "HTMLAreaElement", audio: "HTMLAudioElement",
+    a: "HTMLAnchorElement", abbr: "HTMLElement", acronym: "HTMLElement",
+    address: "HTMLElement", area: "HTMLAreaElement", article: "HTMLElement",
+    aside: "HTMLElement", audio: "HTMLAudioElement", b: "HTMLElement",
+    base: "HTMLBaseElement", bdi: "HTMLElement", bdo: "HTMLElement",
+    bgsound: "HTMLElement", big: "HTMLElement", blockquote: "HTMLElement",
     body: "HTMLBodyElement", br: "HTMLBRElement", button: "HTMLButtonElement",
-    canvas: "HTMLCanvasElement", div: "HTMLDivElement", form: "HTMLFormElement",
-    h1: "HTMLHeadingElement", h2: "HTMLHeadingElement", h3: "HTMLHeadingElement",
-    h4: "HTMLHeadingElement", h5: "HTMLHeadingElement", h6: "HTMLHeadingElement",
-    head: "HTMLHeadElement", hr: "HTMLHRElement", html: "HTMLHtmlElement",
-    img: "HTMLImageElement", input: "HTMLInputElement", label: "HTMLLabelElement",
-    li: "HTMLLIElement", link: "HTMLLinkElement", meta: "HTMLMetaElement",
-    ol: "HTMLOListElement", option: "HTMLOptionElement", p: "HTMLParagraphElement",
-    pre: "HTMLPreElement", script: "HTMLScriptElement", select: "HTMLSelectElement",
-    span: "HTMLSpanElement", style: "HTMLStyleElement", table: "HTMLTableElement",
-    td: "HTMLTableCellElement", th: "HTMLTableCellElement", template: "HTMLTemplateElement",
-    textarea: "HTMLTextAreaElement", tr: "HTMLTableRowElement", ul: "HTMLUListElement",
-    video: "HTMLVideoElement",
+    canvas: "HTMLCanvasElement", caption: "HTMLTableCaptionElement",
+    center: "HTMLElement", cite: "HTMLElement", code: "HTMLElement",
+    col: "HTMLTableColElement", colgroup: "HTMLTableColElement",
+    data: "HTMLDataElement", datalist: "HTMLDataListElement",
+    dd: "HTMLElement", del: "HTMLModElement", details: "HTMLElement",
+    dfn: "HTMLElement", dialog: "HTMLDialogElement", dir: "HTMLDirectoryElement",
+    div: "HTMLDivElement", dl: "HTMLDListElement", dt: "HTMLElement",
+    embed: "HTMLEmbedElement", fieldset: "HTMLFieldSetElement",
+    figcaption: "HTMLElement", figure: "HTMLElement", font: "HTMLFontElement",
+    footer: "HTMLElement", form: "HTMLFormElement", frame: "HTMLFrameElement",
+    frameset: "HTMLFrameSetElement", h1: "HTMLHeadingElement",
+    h2: "HTMLHeadingElement", h3: "HTMLHeadingElement", h4: "HTMLHeadingElement",
+    h5: "HTMLHeadingElement", h6: "HTMLHeadingElement", head: "HTMLHeadElement",
+    header: "HTMLElement", hgroup: "HTMLElement", hr: "HTMLHRElement",
+    html: "HTMLHtmlElement", i: "HTMLElement", iframe: "HTMLIFrameElement",
+    img: "HTMLImageElement", input: "HTMLInputElement", ins: "HTMLModElement",
+    isindex: "HTMLElement", kbd: "HTMLElement", label: "HTMLLabelElement",
+    legend: "HTMLLegendElement", li: "HTMLLIElement", link: "HTMLLinkElement",
+    main: "HTMLElement", map: "HTMLMapElement", mark: "HTMLElement",
+    marquee: "HTMLElement", meta: "HTMLMetaElement", meter: "HTMLMeterElement",
+    nav: "HTMLElement", nobr: "HTMLElement", noframes: "HTMLElement",
+    noscript: "HTMLElement", object: "HTMLObjectElement", ol: "HTMLOListElement",
+    optgroup: "HTMLOptGroupElement", option: "HTMLOptionElement",
+    output: "HTMLOutputElement", p: "HTMLParagraphElement",
+    param: "HTMLParamElement", pre: "HTMLPreElement",
+    progress: "HTMLProgressElement", q: "HTMLQuoteElement", rp: "HTMLElement",
+    rt: "HTMLElement", ruby: "HTMLElement", s: "HTMLElement",
+    samp: "HTMLElement", script: "HTMLScriptElement", section: "HTMLElement",
+    select: "HTMLSelectElement", small: "HTMLElement", source: "HTMLSourceElement",
+    spacer: "HTMLElement", span: "HTMLSpanElement", strike: "HTMLElement",
+    strong: "HTMLElement", style: "HTMLStyleElement", sub: "HTMLElement",
+    summary: "HTMLElement", sup: "HTMLElement", table: "HTMLTableElement",
+    tbody: "HTMLTableSectionElement", td: "HTMLTableCellElement",
+    template: "HTMLTemplateElement", textarea: "HTMLTextAreaElement",
+    tfoot: "HTMLTableSectionElement", th: "HTMLTableCellElement",
+    thead: "HTMLTableSectionElement", time: "HTMLTimeElement",
+    title: "HTMLTitleElement", tr: "HTMLTableRowElement",
+    track: "HTMLTrackElement", tt: "HTMLElement", u: "HTMLElement",
+    ul: "HTMLUListElement", var: "HTMLElement", video: "HTMLVideoElement",
+    wbr: "HTMLElement",
   };
   const tagClassCache = new Map([["iframe", HTMLIFrameElement]]);
   function elementClassFor(tagName) {
@@ -567,14 +1005,21 @@
     let cls = tagClassCache.get(tag);
     if (cls) return cls;
     const name = TAG_CLASS_NAMES[tag];
-    if (!name) return HTMLElement;
-    cls = g[name] || class extends HTMLElement {};
+    // 表外的 HTML 标签:含连字符按自定义元素给 HTMLElement,否则 Unknown
+    cls = name ? g[name] : tag.includes("-") ? HTMLElement : g.HTMLUnknownElement;
     tagClassCache.set(tag, cls);
     return cls;
   }
-  // 把类名挂到全局(同名标签共享一个类,如 h1-h6 / td-th)
+  // 把类名挂到全局(同名标签共享一个类,如 h1-h6 / td-th)。
+  // 注意顺序:先挂手写类,再补生成类,否则缓存里会是同名的另一个类。
+  g.HTMLElement = HTMLElement;
+  g.HTMLIFrameElement = HTMLIFrameElement;
+  g.HTMLUnknownElement = class HTMLUnknownElement extends HTMLElement {};
   for (const name of new Set(Object.values(TAG_CLASS_NAMES))) {
-    if (!g[name]) g[name] = class extends HTMLElement {};
+    if (!g[name]) {
+      // 具名 class 表达式,让报错信息里带上真实类名
+      g[name] = { [name]: class extends HTMLElement {} }[name];
+    }
   }
   for (const [tag, name] of Object.entries(TAG_CLASS_NAMES)) {
     tagClassCache.set(tag, g[name]);
@@ -587,10 +1032,12 @@
   g.CharacterData = CharacterData;
   g.Text = Text;
   g.Comment = Comment;
+  g.ProcessingInstruction = ProcessingInstruction;
+  g.DocumentType = DocumentType;
   g.Element = Element;
   g.HTMLElement = HTMLElement;
   g.HTMLIFrameElement = HTMLIFrameElement;
-  g.SVGElement = Element;
+  g.SVGElement = class SVGElement extends Element {};
   g.Document = DocumentNode;
   g.DocumentFragment = DocumentFragment;
   g.HTMLDocument = DocumentNode;
@@ -598,6 +1045,14 @@
   g.document = wrap(dom.root());
   g.window = g;
   g.self = g;
+  // 顶层窗口语义:没有 iframe 层级,parent/top 即自身,opener 为空
+  g.parent = g;
+  g.top = g;
+  g.opener = null;
+  g.frames = g;
+  g.frameElement = null;
+  g.closed = false;
+  g.name = "";
 
   // window 作为事件目标(globalThis 不是 Node,单独给一个 target)
   const windowTarget = new EventTarget();
@@ -985,9 +1440,200 @@
   }
   g.IntersectionObserver = NoopObserver;
   g.ResizeObserver = NoopObserver;
-  g.MutationObserver = NoopObserver;
   g.PerformanceObserver = NoopObserver;
   g.PerformanceObserver.supportedEntryTypes = [];
+
+  // ---- MutationObserver(真实现)----
+  // 我们的架构里 JS 对 DOM 的一切修改都必经 glue 层方法,
+  // 在那些方法里同步入队记录、微任务统一派发,就是完整语义。
+
+  const activeMutationObservers = new Set();
+  let mutationDeliveryScheduled = false;
+
+  function makeMutationRecord(type, target, extra) {
+    return Object.assign(
+      {
+        type,
+        target,
+        addedNodes: [],
+        removedNodes: [],
+        previousSibling: null,
+        nextSibling: null,
+        attributeName: null,
+        attributeNamespace: null,
+        oldValue: null,
+      },
+      extra,
+    );
+  }
+
+  function scheduleMutationDelivery() {
+    if (mutationDeliveryScheduled) return;
+    mutationDeliveryScheduled = true;
+    Promise.resolve().then(function () {
+      mutationDeliveryScheduled = false;
+      for (const obs of [...activeMutationObservers]) {
+        if (obs._records.length === 0) continue;
+        const records = obs._records;
+        obs._records = [];
+        try {
+          obs._callback(records, obs);
+        } catch (e) {
+          console.error("MutationObserver callback error:", e && e.message ? e.message : String(e));
+        }
+      }
+    });
+  }
+
+  function notifyMutation(record) {
+    for (const obs of activeMutationObservers) {
+      for (const [target, opts] of obs._observed) {
+        const isTarget = target === record.target;
+        if (!isTarget && !(opts.subtree && target.contains(record.target))) continue;
+        if (record.type === "attributes") {
+          if (!opts.attributes) continue;
+          if (opts.attributeFilter && !opts.attributeFilter.includes(record.attributeName)) continue;
+        } else if (record.type === "characterData") {
+          if (!opts.characterData) continue;
+        } else if (record.type === "childList" && !opts.childList) {
+          continue;
+        }
+        const copy = Object.assign({}, record);
+        if (record.type === "attributes" && !opts.attributeOldValue) {
+          copy.oldValue = null;
+        }
+        if (record.type === "characterData" && !opts.characterDataOldValue) {
+          copy.oldValue = null;
+        }
+        obs._records.push(copy);
+        scheduleMutationDelivery();
+        break; // 同一 observer 每条变更只记一次
+      }
+    }
+  }
+
+  class MutationObserver {
+    constructor(callback) {
+      if (typeof callback !== "function") throw new TypeError("callback is not a function");
+      this._callback = callback;
+      this._records = [];
+      this._observed = new Map();
+    }
+    observe(target, options) {
+      options = options || {};
+      // 规范:attributeOldValue / attributeFilter 出现即隐含 attributes
+      const opts = {
+        childList: !!options.childList,
+        attributes:
+          options.attributes !== undefined
+            ? !!options.attributes
+            : options.attributeOldValue !== undefined || options.attributeFilter !== undefined,
+        characterData:
+          options.characterData !== undefined
+            ? !!options.characterData
+            : options.characterDataOldValue !== undefined,
+        subtree: !!options.subtree,
+        attributeOldValue: !!options.attributeOldValue,
+        characterDataOldValue: !!options.characterDataOldValue,
+        attributeFilter: options.attributeFilter ? [...options.attributeFilter] : null,
+      };
+      if (!opts.childList && !opts.attributes && !opts.characterData) {
+        throw new TypeError("observe: no mutation types requested");
+      }
+      this._observed.set(target, opts);
+      activeMutationObservers.add(this);
+    }
+    disconnect() {
+      this._observed.clear();
+      this._records = [];
+      activeMutationObservers.delete(this);
+    }
+    takeRecords() {
+      const records = this._records;
+      this._records = [];
+      return records;
+    }
+  }
+  g.MutationObserver = MutationObserver;
+
+  // 埋点:attribute 变更
+  const rawSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (attrName, value) {
+    const key = String(attrName).toLowerCase();
+    const oldValue = this.getAttribute(key);
+    rawSetAttribute.call(this, attrName, value);
+    if (activeMutationObservers.size) {
+      notifyMutation(
+        makeMutationRecord("attributes", this, { attributeName: key, oldValue }),
+      );
+    }
+  };
+  const rawRemoveAttribute = Element.prototype.removeAttribute;
+  Element.prototype.removeAttribute = function (attrName) {
+    const key = String(attrName).toLowerCase();
+    const oldValue = this.getAttribute(key);
+    rawRemoveAttribute.call(this, attrName);
+    if (activeMutationObservers.size && oldValue !== null) {
+      notifyMutation(
+        makeMutationRecord("attributes", this, { attributeName: key, oldValue }),
+      );
+    }
+  };
+
+  // 埋点:树结构变更
+  function notifyChildList(parent, added, removed, prev, next) {
+    if (!activeMutationObservers.size) return;
+    notifyMutation(
+      makeMutationRecord("childList", parent, {
+        addedNodes: added,
+        removedNodes: removed,
+        previousSibling: prev || null,
+        nextSibling: next || null,
+      }),
+    );
+  }
+  const rawAppendChild = Node.prototype.appendChild;
+  Node.prototype.appendChild = function (child) {
+    const prev = this.lastChild;
+    const result = rawAppendChild.call(this, child);
+    notifyChildList(this, child instanceof DocumentFragment ? [] : [child], [], prev, null);
+    return result;
+  };
+  const rawInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function (node, reference) {
+    // arguments 原样转发:参数个数检查在原方法里
+    const result = rawInsertBefore.apply(this, arguments);
+    notifyChildList(
+      this,
+      node instanceof DocumentFragment ? [] : [node],
+      [],
+      node.previousSibling,
+      reference || null,
+    );
+    return result;
+  };
+  const rawRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function (child) {
+    const prev = child.previousSibling;
+    const next = child.nextSibling;
+    const result = rawRemoveChild.call(this, child);
+    notifyChildList(this, [], [child], prev, next);
+    return result;
+  };
+
+  // 埋点:文本数据变更
+  const nodeValueDesc = Object.getOwnPropertyDescriptor(Node.prototype, "nodeValue");
+  Object.defineProperty(Node.prototype, "nodeValue", {
+    configurable: true,
+    get: nodeValueDesc.get,
+    set(v) {
+      const oldValue = nodeValueDesc.get.call(this);
+      nodeValueDesc.set.call(this, v);
+      if (activeMutationObservers.size && (this.nodeType === 3 || this.nodeType === 8)) {
+        notifyMutation(makeMutationRecord("characterData", this, { oldValue }));
+      }
+    },
+  });
 
   g.getComputedStyle = function (el) {
     return {
@@ -1374,8 +2020,23 @@
   };
 
   class DOMImplementation {
-    createHTMLDocument() {
-      return g.document;
+    createHTMLDocument(title) {
+      // 同一 arena、另一棵树:见 ops 的 createHTMLDocument
+      return wrap(dom.createHTMLDocument(title === undefined ? "" : String(title)));
+    }
+    createDocumentType(name) {
+      return wrap(dom.createDoctype(String(name)));
+    }
+    createDocument(ns, qualifiedName, doctype) {
+      const docNode = wrap(dom.createBareDocument());
+      docNode._contentType = "application/xml";
+      if (doctype) docNode.appendChild(doctype);
+      if (qualifiedName) {
+        docNode.appendChild(
+          wrap(dom.createElementNS(ns == null ? "" : String(ns), String(qualifiedName))),
+        );
+      }
+      return docNode;
     }
     hasFeature() {
       return true;
