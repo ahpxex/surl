@@ -49,12 +49,25 @@ async fn main() -> anyhow::Result<()> {
         tracing::debug!(
             scripts = report.scripts.executed,
             script_errors = report.scripts.errors.len(),
-            skipped_module = report.scripts.skipped_module,
+            modules_prefetched = report.modules.prefetched,
+            modules_evaluated = report.modules.evaluated,
             timers = report.settle.timers_fired,
             fetches = report.settle.fetches,
             virtual_ms = report.settle.virtual_elapsed_ms,
             "page load settled"
         );
+        for e in report
+            .scripts
+            .errors
+            .iter()
+            .chain(&report.modules.prefetch_errors)
+            .chain(&report.modules.errors)
+        {
+            tracing::warn!(target: "surl_js", "{e}");
+        }
+        for miss in &report.modules.runtime_misses {
+            tracing::warn!(target: "surl_js", "dynamic import miss: {miss}");
+        }
         doc = rt.take_document();
     }
 

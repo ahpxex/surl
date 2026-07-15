@@ -13,7 +13,7 @@
     let node = cache.get(id);
     if (node) return node;
     const type = dom.nodeType(id);
-    if (type === 1) node = new Element(id);
+    if (type === 1) node = new (elementClassFor(dom.tagName(id)))(id);
     else if (type === 3) node = new Text(id);
     else if (type === 8) node = new Comment(id);
     else if (type === 9) node = new DocumentNode(id);
@@ -533,6 +533,53 @@
     enumerable: false,
   });
 
+  // HTML*Element 层次:instanceof 必须按标签区分——React 的
+  // getActiveElement 靠 `x instanceof HTMLIFrameElement` 判断 iframe,
+  // 全部 alias 到 Element 会让 body 误判成 iframe 而死循环。
+  class HTMLElement extends Element {}
+  class HTMLIFrameElement extends HTMLElement {
+    get contentWindow() {
+      return null;
+    }
+    get contentDocument() {
+      return null;
+    }
+  }
+  const TAG_CLASS_NAMES = {
+    a: "HTMLAnchorElement", area: "HTMLAreaElement", audio: "HTMLAudioElement",
+    body: "HTMLBodyElement", br: "HTMLBRElement", button: "HTMLButtonElement",
+    canvas: "HTMLCanvasElement", div: "HTMLDivElement", form: "HTMLFormElement",
+    h1: "HTMLHeadingElement", h2: "HTMLHeadingElement", h3: "HTMLHeadingElement",
+    h4: "HTMLHeadingElement", h5: "HTMLHeadingElement", h6: "HTMLHeadingElement",
+    head: "HTMLHeadElement", hr: "HTMLHRElement", html: "HTMLHtmlElement",
+    img: "HTMLImageElement", input: "HTMLInputElement", label: "HTMLLabelElement",
+    li: "HTMLLIElement", link: "HTMLLinkElement", meta: "HTMLMetaElement",
+    ol: "HTMLOListElement", option: "HTMLOptionElement", p: "HTMLParagraphElement",
+    pre: "HTMLPreElement", script: "HTMLScriptElement", select: "HTMLSelectElement",
+    span: "HTMLSpanElement", style: "HTMLStyleElement", table: "HTMLTableElement",
+    td: "HTMLTableCellElement", th: "HTMLTableCellElement", template: "HTMLTemplateElement",
+    textarea: "HTMLTextAreaElement", tr: "HTMLTableRowElement", ul: "HTMLUListElement",
+    video: "HTMLVideoElement",
+  };
+  const tagClassCache = new Map([["iframe", HTMLIFrameElement]]);
+  function elementClassFor(tagName) {
+    const tag = String(tagName).toLowerCase();
+    let cls = tagClassCache.get(tag);
+    if (cls) return cls;
+    const name = TAG_CLASS_NAMES[tag];
+    if (!name) return HTMLElement;
+    cls = g[name] || class extends HTMLElement {};
+    tagClassCache.set(tag, cls);
+    return cls;
+  }
+  // 把类名挂到全局(同名标签共享一个类,如 h1-h6 / td-th)
+  for (const name of new Set(Object.values(TAG_CLASS_NAMES))) {
+    if (!g[name]) g[name] = class extends HTMLElement {};
+  }
+  for (const [tag, name] of Object.entries(TAG_CLASS_NAMES)) {
+    tagClassCache.set(tag, g[name]);
+  }
+
   g.EventTarget = EventTarget;
   g.Event = Event;
   g.CustomEvent = CustomEvent;
@@ -541,7 +588,8 @@
   g.Text = Text;
   g.Comment = Comment;
   g.Element = Element;
-  g.HTMLElement = Element; // M1 粒度:不细分 HTML*Element 子类
+  g.HTMLElement = HTMLElement;
+  g.HTMLIFrameElement = HTMLIFrameElement;
   g.SVGElement = Element;
   g.Document = DocumentNode;
   g.DocumentFragment = DocumentFragment;
@@ -644,6 +692,82 @@
     }
   }
   g.URL = URL;
+
+  class URLSearchParams {
+    constructor(init) {
+      this._pairs = [];
+      if (typeof init === "string") {
+        const s = init.startsWith("?") ? init.slice(1) : init;
+        for (const part of s.split("&")) {
+          if (!part) continue;
+          const eq = part.indexOf("=");
+          const k = eq < 0 ? part : part.slice(0, eq);
+          const v = eq < 0 ? "" : part.slice(eq + 1);
+          this._pairs.push([decodeURIComponent(k.replace(/\+/g, " ")), decodeURIComponent(v.replace(/\+/g, " "))]);
+        }
+      } else if (init instanceof URLSearchParams) {
+        this._pairs = init._pairs.map((p) => [...p]);
+      } else if (Array.isArray(init)) {
+        for (const [k, v] of init) this._pairs.push([String(k), String(v)]);
+      } else if (init && typeof init === "object") {
+        for (const k of Object.keys(init)) this._pairs.push([k, String(init[k])]);
+      }
+    }
+    append(k, v) {
+      this._pairs.push([String(k), String(v)]);
+    }
+    set(k, v) {
+      k = String(k);
+      const first = this._pairs.findIndex(([pk]) => pk === k);
+      this._pairs = this._pairs.filter(([pk]) => pk !== k);
+      const entry = [k, String(v)];
+      if (first < 0) this._pairs.push(entry);
+      else this._pairs.splice(first, 0, entry);
+    }
+    get(k) {
+      const hit = this._pairs.find(([pk]) => pk === String(k));
+      return hit ? hit[1] : null;
+    }
+    getAll(k) {
+      return this._pairs.filter(([pk]) => pk === String(k)).map(([, v]) => v);
+    }
+    has(k) {
+      return this._pairs.some(([pk]) => pk === String(k));
+    }
+    delete(k) {
+      this._pairs = this._pairs.filter(([pk]) => pk !== String(k));
+    }
+    forEach(fn) {
+      for (const [k, v] of this._pairs) fn(v, k, this);
+    }
+    keys() {
+      return this._pairs.map(([k]) => k)[Symbol.iterator]();
+    }
+    values() {
+      return this._pairs.map(([, v]) => v)[Symbol.iterator]();
+    }
+    entries() {
+      return this._pairs.map((p) => [...p])[Symbol.iterator]();
+    }
+    [Symbol.iterator]() {
+      return this.entries();
+    }
+    get size() {
+      return this._pairs.length;
+    }
+    toString() {
+      return this._pairs
+        .map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
+        .join("&");
+    }
+  }
+  g.URLSearchParams = URLSearchParams;
+  Object.defineProperty(URL.prototype, "searchParams", {
+    configurable: true,
+    get() {
+      return new URLSearchParams(this.search);
+    },
+  });
 
   // ---- location / navigator ----
 

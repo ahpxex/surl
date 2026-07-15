@@ -24,12 +24,16 @@ fn example_com_static_page() {
 
 #[test]
 #[ignore = "hits the real network"]
-fn readaware_app_is_empty_until_m3() {
-    // golden corpus 第一条:M0 阶段 SPA 空壳没有任何结构 —— 这正是
-    // 2026-07-15 裸 curl 误报的可视化。M3 hydration 打通后,这条测试
-    // 将改为要求树里出现 discord.gg/whDrKXwHWU。
+fn readaware_app_renders_via_own_runtime() {
+    // golden corpus 第一条,即项目验收标准:readaware.app(React + Vite 产物)
+    // 在自研运行时里渲染出含 discord 链接的语义树。M0-M2 阶段这里是空壳
+    // ——2026-07-15 裸 curl 验证部署误报的可视化;M3 起必须是满的。
     let out = surl_output(&["https://readaware.app"]);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 1, "SPA shell should have no children yet: {out}");
-    assert!(lines[0].starts_with("document \"ReadAware"), "{out}");
+    assert!(out.contains("discord.gg/whDrKXwHWU"), "{out}");
+    assert!(out.contains("heading[1]"), "{out}");
+    assert!(out.lines().count() > 10, "tree suspiciously small: {out}");
+
+    // 对照组:--no-js 仍是诚实的空壳
+    let raw = surl_output(&["https://readaware.app", "--no-js"]);
+    assert_eq!(raw.lines().count(), 1, "{raw}");
 }
