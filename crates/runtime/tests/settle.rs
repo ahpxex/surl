@@ -569,3 +569,24 @@ async fn custom_elements_registry() {
     rt.eval("if (defined.join(',') !== 'x-a') throw new Error('whenDefined broken')")
         .unwrap();
 }
+
+/// quickjs-ng(rquickjs-sys 0.12.1 vendor)的 Iterator.prototype.find/filter
+/// 对谓词不命中的对象漏 JS_FreeValue,teardown 时 JS_FreeRuntime 直接 abort
+/// (astro.build 实测)。bootstrap 用 JS 实现覆盖止血;此测试钉住它——
+/// 若止血块被删而引擎未修,这里会 SIGABRT 炸掉整个测试进程,足够醒目。
+#[tokio::test]
+async fn iterator_find_filter_do_not_leak_on_teardown() {
+    let rt = PageRuntime::new(parse_html(
+        r#"<!doctype html><p>a</p><p>b</p><p>c</p>
+        <script>
+          // find:命中不在第 0 个,前面被扫过的对象曾经泄漏
+          document.querySelectorAll("p").values().find((e) => e.textContent === "b");
+          [{ a: 1 }, { a: 2 }, { a: 3 }].values().find((x) => x.a === 2);
+          // filter:不命中的对象同病
+          [{}, { a: 1 }, {}].values().filter((x) => x.a === 1).toArray();
+        </script>"#,
+    ))
+    .unwrap();
+    rt.load(&NoNetwork, SettleOptions::default()).await.unwrap();
+    drop(rt); // 泄漏在这里引爆(JS_FreeRuntime assert)
+}

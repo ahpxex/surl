@@ -164,6 +164,14 @@ impl PageRuntime {
         let event_loop: ops::SharedEventLoop = Rc::new(RefCell::new(Default::default()));
 
         ctx.with(|ctx| -> Result<(), RuntimeError> {
+            // 排障钩子:SURL_DUMP_LEAKS=1 且 quickjs 以 -DENABLE_DUMPS 编译时,
+            // JS_FreeRuntime 会打印泄漏对象清单(对付 gc_obj_list assert)。
+            if std::env::var_os("SURL_DUMP_LEAKS").is_some() {
+                unsafe {
+                    let rt_ptr = rquickjs::qjs::JS_GetRuntime(ctx.as_raw().as_ptr());
+                    rquickjs::qjs::JS_SetDumpFlags(rt_ptr, 0x4000); // JS_DUMP_LEAKS
+                }
+            }
             ops::install(
                 &ctx,
                 &dom,

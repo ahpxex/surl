@@ -5,6 +5,66 @@
 (function (g) {
   const dom = g.__surl_dom;
 
+  // ---- 引擎 bug 止血(rquickjs-sys 0.12.1 vendor 的 quickjs-ng)----
+  // Iterator.prototype.find/filter 的 C 实现对谓词不命中的元素漏 JS_FreeValue:
+  // 每个被扫过的对象泄漏一个引用,teardown 时 JS_FreeRuntime 直接 assert
+  // (astro.build 实测,quickjs.c 的 FIND 分支 `item = JS_UNDEFINED` 前没 free)。
+  // 用 JS 实现覆盖;引擎升级修复后可删。
+  {
+    const IteratorProto = Object.getPrototypeOf(Object.getPrototypeOf([].values()));
+    const closeIterator = (it) => {
+      if (typeof it.return === "function") {
+        try {
+          it.return();
+        } catch (_) {}
+      }
+    };
+    Object.defineProperty(IteratorProto, "find", {
+      configurable: true,
+      writable: true,
+      enumerable: false,
+      value: function find(pred) {
+        let i = 0;
+        for (;;) {
+          const r = this.next();
+          if (r.done) return undefined;
+          let matched;
+          try {
+            matched = pred(r.value, i++);
+          } catch (e) {
+            closeIterator(this);
+            throw e;
+          }
+          if (matched) {
+            closeIterator(this);
+            return r.value;
+          }
+        }
+      },
+    });
+    Object.defineProperty(IteratorProto, "filter", {
+      configurable: true,
+      writable: true,
+      enumerable: false,
+      value: function filter(pred) {
+        const source = this;
+        let i = 0;
+        // 生成器天然满足惰性;finally 保证提前 close 时传播到底层迭代器
+        return (function* () {
+          try {
+            for (;;) {
+              const r = source.next();
+              if (r.done) return;
+              if (pred(r.value, i++)) yield r.value;
+            }
+          } finally {
+            closeIterator(source);
+          }
+        })();
+      },
+    });
+  }
+
   // id -> wrapper。arena 槽位不复用,句柄不会二义。
   const cache = new Map();
 
