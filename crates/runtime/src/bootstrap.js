@@ -68,10 +68,26 @@
   // id -> wrapper。arena 槽位不复用,句柄不会二义。
   const cache = new Map();
 
+  // wrap 内部构造节点包装器时置位:让 Text/Comment/DocumentFragment 的
+  // 构造器能区分「包装既有节点(参数是句柄)」与「页面 new Text("data")」
+  let wrapping = false;
+
   function wrap(id) {
     if (!id) return null;
     let node = cache.get(id);
     if (node) return node;
+    wrapping = true;
+    try {
+      node = wrapNew(id);
+    } finally {
+      wrapping = false;
+    }
+    cache.set(id, node);
+    return node;
+  }
+
+  function wrapNew(id) {
+    let node;
     const type = dom.nodeType(id);
     if (type === 1) {
       const meta = dom.elementMeta(id);
@@ -89,7 +105,6 @@
     else if (type === 10) node = new DocumentType(id);
     else if (type === 11) node = new DocumentFragment(id);
     else node = new Node(id);
-    cache.set(id, node);
     return node;
   }
 
@@ -669,6 +684,16 @@
   }
 
   class DocumentFragment extends Node {
+    constructor(id) {
+      if (wrapping) {
+        super(id);
+        return;
+      }
+      // 页面侧 new DocumentFragment()
+      const newId = dom.createFragment();
+      super(newId);
+      cache.set(newId, this);
+    }
     get nodeName() {
       return "#document-fragment";
     }
@@ -680,19 +705,100 @@
     }
   }
 
+  // WebIDL unsigned long:ToUint32(-1 → 4294967295,测试依赖这个回绕)
+  const toUint32 = (v) => Number(v) >>> 0;
+
   class CharacterData extends Node {
     get data() {
       return this.nodeValue;
     }
     set data(value) {
-      this.nodeValue = value;
+      this.nodeValue = value === null ? "" : value;
     }
     get length() {
       return this.nodeValue.length;
     }
+    substringData(offset, count) {
+      if (arguments.length < 2) throw new TypeError("substringData: 2 arguments required");
+      offset = toUint32(offset);
+      count = toUint32(count);
+      const data = this.data;
+      if (offset > data.length) {
+        throw new DOMException("substringData: offset out of range", "IndexSizeError");
+      }
+      return data.slice(offset, offset + count);
+    }
+    appendData(data) {
+      if (arguments.length < 1) throw new TypeError("appendData: 1 argument required");
+      this.data = this.data + String(data);
+    }
+    // 规范的 replace-data 算法,insert/delete 都是它的特例
+    replaceData(offset, count, data) {
+      if (arguments.length < 3) throw new TypeError("replaceData: 3 arguments required");
+      offset = toUint32(offset);
+      count = toUint32(count);
+      data = String(data);
+      const old = this.data;
+      if (offset > old.length) {
+        throw new DOMException("replaceData: offset out of range", "IndexSizeError");
+      }
+      if (offset + count > old.length) count = old.length - offset;
+      this.data = old.slice(0, offset) + data + old.slice(offset + count);
+    }
+    insertData(offset, data) {
+      if (arguments.length < 2) throw new TypeError("insertData: 2 arguments required");
+      this.replaceData(offset, 0, data);
+    }
+    deleteData(offset, count) {
+      if (arguments.length < 2) throw new TypeError("deleteData: 2 arguments required");
+      this.replaceData(offset, count, "");
+    }
   }
-  class Text extends CharacterData {}
-  class Comment extends CharacterData {}
+  class Text extends CharacterData {
+    constructor(data) {
+      if (wrapping) {
+        super(data);
+        return;
+      }
+      // 页面侧 new Text(data)
+      const id = dom.createText(data === undefined ? "" : String(data));
+      super(id);
+      cache.set(id, this);
+    }
+    splitText(offset) {
+      offset = toUint32(offset);
+      const data = this.data;
+      if (offset > data.length) {
+        throw new DOMException("splitText: offset out of range", "IndexSizeError");
+      }
+      const rest = wrap(dom.createText(data.slice(offset)));
+      this.data = data.slice(0, offset);
+      const p = this.parentNode;
+      if (p) p.insertBefore(rest, this.nextSibling);
+      return rest;
+    }
+    get wholeText() {
+      // 连续文本兄弟的拼接
+      let first = this;
+      while (first.previousSibling && first.previousSibling.nodeType === 3) {
+        first = first.previousSibling;
+      }
+      let out = "";
+      for (let n = first; n && n.nodeType === 3; n = n.nextSibling) out += n.data;
+      return out;
+    }
+  }
+  class Comment extends CharacterData {
+    constructor(data) {
+      if (wrapping) {
+        super(data);
+        return;
+      }
+      const id = dom.createComment(data === undefined ? "" : String(data));
+      super(id);
+      cache.set(id, this);
+    }
+  }
   class ProcessingInstruction extends CharacterData {
     get target() {
       return dom.nodeName(this._id);
@@ -2152,37 +2258,64 @@
     },
   });
 
-  // 现代插入 API(React/库常用)
+  // 现代插入 API:按规范分发——ChildNode mixin 装在 Element/CharacterData/
+  // DocumentType,ParentNode mixin 装在 Element/Document/DocumentFragment
   function toNode(x) {
     return x instanceof Node ? x : g.document.createTextNode(String(x));
   }
-  Element.prototype.append = function (...items) {
-    for (const item of items) this.appendChild(toNode(item));
+  const ParentNodeMixin = {
+    append(...items) {
+      for (const item of items) this.appendChild(toNode(item));
+    },
+    prepend(...items) {
+      const first = this.firstChild;
+      for (const item of items) this.insertBefore(toNode(item), first);
+    },
+    replaceChildren(...items) {
+      while (this.firstChild) this.removeChild(this.firstChild);
+      for (const item of items) this.appendChild(toNode(item));
+    },
   };
-  Element.prototype.prepend = function (...items) {
-    const first = this.firstChild;
-    for (const item of items) this.insertBefore(toNode(item), first);
+  const ChildNodeMixin = {
+    before(...items) {
+      const p = this.parentNode;
+      if (p) for (const item of items) p.insertBefore(toNode(item), this);
+    },
+    after(...items) {
+      const p = this.parentNode;
+      if (!p) return;
+      const ref = this.nextSibling;
+      for (const item of items) p.insertBefore(toNode(item), ref);
+    },
+    replaceWith(...items) {
+      const p = this.parentNode;
+      if (!p) return;
+      for (const item of items) p.insertBefore(toNode(item), this);
+      p.removeChild(this);
+    },
   };
-  Element.prototype.before = function (...items) {
-    const p = this.parentNode;
-    if (p) for (const item of items) p.insertBefore(toNode(item), this);
-  };
-  Element.prototype.after = function (...items) {
-    const p = this.parentNode;
-    if (!p) return;
-    const ref = this.nextSibling;
-    for (const item of items) p.insertBefore(toNode(item), ref);
-  };
-  Element.prototype.replaceWith = function (...items) {
-    const p = this.parentNode;
-    if (!p) return;
-    for (const item of items) p.insertBefore(toNode(item), this);
-    p.removeChild(this);
-  };
-  Element.prototype.replaceChildren = function (...items) {
-    this.textContent = "";
-    for (const item of items) this.appendChild(toNode(item));
-  };
+  for (const ctor of [Element, DocumentNode, DocumentFragment]) {
+    for (const [name, fn] of Object.entries(ParentNodeMixin)) {
+      if (!Object.prototype.hasOwnProperty.call(ctor.prototype, name)) {
+        Object.defineProperty(ctor.prototype, name, {
+          configurable: true,
+          writable: true,
+          enumerable: true,
+          value: fn,
+        });
+      }
+    }
+  }
+  for (const ctor of [Element, CharacterData, DocumentType]) {
+    for (const [name, fn] of Object.entries(ChildNodeMixin)) {
+      Object.defineProperty(ctor.prototype, name, {
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: fn,
+      });
+    }
+  }
   Element.prototype.insertAdjacentHTML = function (position, html) {
     const frag = g.document.createElement("template-host");
     frag.innerHTML = html;

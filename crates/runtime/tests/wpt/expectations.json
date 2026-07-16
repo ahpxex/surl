@@ -160,8 +160,7 @@
     "disconnected radio should be checked": "TIMEOUT: Test timed out",
     "disconnected radio should be checked from dispatchEvent(new MouseEvent('click'))": "TIMEOUT: Test timed out",
     "event state during post-click handling": "TIMEOUT: Test timed out",
-    "look at parents only when event bubbles": "FAIL: Error converting from js 'string' into type 'f64'",
-    "look at parents when event bubbles": "FAIL: Error converting from js 'string' into type 'f64'",
+    "look at parents when event bubbles": "TIMEOUT: Test timed out",
     "pick the first with activation behavior <a href>": "TIMEOUT: Test timed out",
     "redispatch during post-click handling": "TIMEOUT: Test timed out"
   },
@@ -811,243 +810,36 @@
   "dom/lists/DOMTokenList-value.html": {
     "DOMTokenList value": "FAIL: assert_class_string: expected \"[object DOMTokenList]\" but got \"[object Object]\""
   },
-  "dom/nodes/CharacterData-appendData.html": {
-    "Comment.appendData('')": "FAIL: not a function",
-    "Comment.appendData('', 'bar')": "FAIL: not a function",
-    "Comment.appendData('bar')": "FAIL: not a function",
-    "Comment.appendData(non-ASCII)": "FAIL: not a function",
-    "Comment.appendData(null)": "FAIL: not a function",
-    "Comment.appendData(undefined)": "FAIL: not a function",
-    "Text.appendData('')": "FAIL: not a function",
-    "Text.appendData('', 'bar')": "FAIL: not a function",
-    "Text.appendData('bar')": "FAIL: not a function",
-    "Text.appendData(non-ASCII)": "FAIL: not a function",
-    "Text.appendData(null)": "FAIL: not a function",
-    "Text.appendData(undefined)": "FAIL: not a function"
-  },
-  "dom/nodes/CharacterData-data.html": {
-    "Comment.data = null": "FAIL: assert_equals: expected \"\" but got \"null\"",
-    "Text.data = null": "FAIL: assert_equals: expected \"\" but got \"null\""
-  },
-  "dom/nodes/CharacterData-deleteData.html": {
-    "Comment.deleteData() at the end": "FAIL: not a function",
-    "Comment.deleteData() at the start": "FAIL: not a function",
-    "Comment.deleteData() in the middle": "FAIL: not a function",
-    "Comment.deleteData() out of bounds": "FAIL: assert_throws_dom: function \"function() { node.deleteData(5, 10) }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Comment.deleteData() with large negative count": "FAIL: not a function",
-    "Comment.deleteData() with non-BMP data": "FAIL: not a function",
-    "Comment.deleteData() with non-ascii data": "FAIL: not a function",
-    "Comment.deleteData() with small negative count": "FAIL: not a function",
-    "Comment.deleteData() with zero count": "FAIL: not a function",
-    "Text.deleteData() at the end": "FAIL: not a function",
-    "Text.deleteData() at the start": "FAIL: not a function",
-    "Text.deleteData() in the middle": "FAIL: not a function",
-    "Text.deleteData() out of bounds": "FAIL: assert_throws_dom: function \"function() { node.deleteData(5, 10) }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Text.deleteData() with large negative count": "FAIL: not a function",
-    "Text.deleteData() with non-BMP data": "FAIL: not a function",
-    "Text.deleteData() with non-ascii data": "FAIL: not a function",
-    "Text.deleteData() with small negative count": "FAIL: not a function",
-    "Text.deleteData() with zero count": "FAIL: not a function"
-  },
-  "dom/nodes/CharacterData-insertData.html": {
-    "Comment.insertData('')": "FAIL: not a function",
-    "Comment.insertData() at the end": "FAIL: not a function",
-    "Comment.insertData() at the start": "FAIL: not a function",
-    "Comment.insertData() in the middle": "FAIL: not a function",
-    "Comment.insertData() negative in bounds": "FAIL: not a function",
-    "Comment.insertData() negative out of bounds": "FAIL: assert_throws_dom: function \"function() { node.insertData(-1, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Comment.insertData() out of bounds": "FAIL: assert_throws_dom: function \"function() { node.insertData(5, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Comment.insertData() with non-BMP data": "FAIL: not a function",
-    "Comment.insertData() with non-ascii data": "FAIL: not a function",
-    "Text.insertData('')": "FAIL: not a function",
-    "Text.insertData() at the end": "FAIL: not a function",
-    "Text.insertData() at the start": "FAIL: not a function",
-    "Text.insertData() in the middle": "FAIL: not a function",
-    "Text.insertData() negative in bounds": "FAIL: not a function",
-    "Text.insertData() negative out of bounds": "FAIL: assert_throws_dom: function \"function() { node.insertData(-1, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Text.insertData() out of bounds": "FAIL: assert_throws_dom: function \"function() { node.insertData(5, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Text.insertData() with non-BMP data": "FAIL: not a function",
-    "Text.insertData() with non-ascii data": "FAIL: not a function"
-  },
-  "dom/nodes/CharacterData-replaceData.html": {
-    "Comment.replaceData() at the end (longer)": "FAIL: not a function",
-    "Comment.replaceData() at the end (same length)": "FAIL: not a function",
-    "Comment.replaceData() at the end (shorter)": "FAIL: not a function",
-    "Comment.replaceData() at the start (equal length)": "FAIL: not a function",
-    "Comment.replaceData() at the start (longer)": "FAIL: not a function",
-    "Comment.replaceData() at the start (shorter)": "FAIL: not a function",
-    "Comment.replaceData() before the start": "FAIL: not a function",
-    "Comment.replaceData() in the middle (equal length)": "FAIL: not a function",
-    "Comment.replaceData() in the middle (longer)": "FAIL: not a function",
-    "Comment.replaceData() in the middle (shorter)": "FAIL: not a function",
-    "Comment.replaceData() the whole string": "FAIL: not a function",
-    "Comment.replaceData() with clamped count": "FAIL: not a function",
-    "Comment.replaceData() with invalid offset": "FAIL: assert_throws_dom: function \"function() { node.replaceData(5, 1, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException IndexSizeError: property \"code\" is equal to undefined, expected 1",
-    "Comment.replaceData() with negative clamped count": "FAIL: not a function",
-    "Comment.replaceData() with non-ASCII data": "FAIL: not a function",
-    "Comment.replaceData() with non-BMP data": "FAIL: not a function",
-    "Comment.replaceData() with the empty string": "FAIL: not a function",
-    "Text.replaceData() at the end (longer)": "FAIL: not a function",
-    "Text.replaceData() at the end (same length)": "FAIL: not a function",
-    "Text.replaceData() at the end (shorter)": "FAIL: not a function",
-    "Text.replaceData() at the start (equal length)": "FAIL: not a function",
-    "Text.replaceData() at the start (longer)": "FAIL: not a function",
-    "Text.replaceData() at the start (shorter)": "FAIL: not a function",
-    "Text.replaceData() before the start": "FAIL: not a function",
-    "Text.replaceData() in the middle (equal length)": "FAIL: not a function",
-    "Text.replaceData() in the middle (longer)": "FAIL: not a function",
-    "Text.replaceData() in the middle (shorter)": "FAIL: not a function",
-    "Text.replaceData() the whole string": "FAIL: not a function",
-    "Text.replaceData() with clamped count": "FAIL: not a function",
-    "Text.replaceData() with invalid offset": "FAIL: assert_throws_dom: function \"function() { node.replaceData(5, 1, \"x\") }\" threw object \"TypeError: not a function\" that is not a DOMException IndexSizeError: property \"code\" is equal to undefined, expected 1",
-    "Text.replaceData() with negative clamped count": "FAIL: not a function",
-    "Text.replaceData() with non-ASCII data": "FAIL: not a function",
-    "Text.replaceData() with non-BMP data": "FAIL: not a function",
-    "Text.replaceData() with the empty string": "FAIL: not a function"
-  },
-  "dom/nodes/CharacterData-substringData.html": {
-    "Comment.substringData() with in-bounds count": "FAIL: not a function",
-    "Comment.substringData() with in-bounds offset": "FAIL: not a function",
-    "Comment.substringData() with invalid offset": "FAIL: assert_throws_dom: function \"function() { node.substringData(5, 0) }\" threw object \"TypeError: not a function\" that is not a DOMException IndexSizeError: property \"code\" is equal to undefined, expected 1",
-    "Comment.substringData() with large count": "FAIL: not a function",
-    "Comment.substringData() with negative count": "FAIL: not a function",
-    "Comment.substringData() with negative offset": "FAIL: not a function",
-    "Comment.substringData() with non-ASCII data": "FAIL: not a function",
-    "Comment.substringData() with non-BMP data": "FAIL: not a function",
-    "Comment.substringData() with string offset": "FAIL: not a function",
-    "Comment.substringData() with too many arguments": "FAIL: not a function",
-    "Comment.substringData() with very large count": "FAIL: not a function",
-    "Comment.substringData() with very large offset": "FAIL: not a function",
-    "Comment.substringData() with zero count": "FAIL: not a function",
-    "Text.substringData() with in-bounds count": "FAIL: not a function",
-    "Text.substringData() with in-bounds offset": "FAIL: not a function",
-    "Text.substringData() with invalid offset": "FAIL: assert_throws_dom: function \"function() { node.substringData(5, 0) }\" threw object \"TypeError: not a function\" that is not a DOMException IndexSizeError: property \"code\" is equal to undefined, expected 1",
-    "Text.substringData() with large count": "FAIL: not a function",
-    "Text.substringData() with negative count": "FAIL: not a function",
-    "Text.substringData() with negative offset": "FAIL: not a function",
-    "Text.substringData() with non-ASCII data": "FAIL: not a function",
-    "Text.substringData() with non-BMP data": "FAIL: not a function",
-    "Text.substringData() with string offset": "FAIL: not a function",
-    "Text.substringData() with too many arguments": "FAIL: not a function",
-    "Text.substringData() with very large count": "FAIL: not a function",
-    "Text.substringData() with very large offset": "FAIL: not a function",
-    "Text.substringData() with zero count": "FAIL: not a function"
-  },
   "dom/nodes/CharacterData-surrogates.html": {
-    "Comment.deleteData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Comment.insertData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Comment.replaceData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Comment.substringData() splitting surrogate pairs": "FAIL: not a function",
-    "Text.deleteData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Text.insertData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Text.replaceData() splitting and creating surrogate pairs": "FAIL: not a function",
-    "Text.substringData() splitting surrogate pairs": "FAIL: not a function"
+    "Comment.deleteData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0",
+    "Comment.insertData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0",
+    "Comment.replaceData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0",
+    "Text.deleteData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0",
+    "Text.insertData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0",
+    "Text.replaceData() splitting and creating surrogate pairs": "FAIL: Conversion from string failed: invalid utf-8 sequence of 1 bytes from index 0"
   },
   "dom/nodes/ChildNode-after.html": {
-    "Comment.after() when pre-insert behaves like append.": "FAIL: not a function",
-    "Comment.after() with all siblings of child as arguments.": "FAIL: not a function",
-    "Comment.after() with context object itself and node as the arguments, switching positions.": "FAIL: not a function",
-    "Comment.after() with context object itself as the argument.": "FAIL: not a function",
-    "Comment.after() with null as an argument.": "FAIL: not a function",
-    "Comment.after() with one element and text as arguments.": "FAIL: not a function",
-    "Comment.after() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Comment.after() with only one element as an argument.": "FAIL: not a function",
-    "Comment.after() with only text as an argument.": "FAIL: not a function",
-    "Comment.after() with some siblings of child as arguments; no changes in tree.": "FAIL: not a function",
-    "Comment.after() with the empty string as an argument.": "FAIL: not a function",
-    "Comment.after() with undefined as an argument.": "FAIL: not a function",
-    "Comment.after() without any argument.": "FAIL: not a function",
-    "Comment.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: not a function",
+    "Comment.after() with all siblings of child as arguments.": "FAIL: assert_equals: expected \"<!--test--><x></x><y></y><z></z>\" but got \"<!--test--><y></y><z></z><x></x>\"",
+    "Comment.after() with one sibling of child and text as arguments.": "FAIL: assert_equals: expected \"<!--test--><x></x>21<y></y>\" but got \"<!--test-->2<x></x>1<y></y>\"",
+    "Comment.after() with some siblings of child as arguments; no changes in tree.": "FAIL: assert_equals: expected \"<!--test--><v></v><x></x><y></y><z></z>\" but got \"<!--test--><x></x><v></v><y></y><z></z>\"",
+    "Comment.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: assert_equals: expected \"<!--test--><x></x><y></y><z></z>\" but got \"<!--test--><y></y><x></x><z></z>\"",
     "Element.after() with all siblings of child as arguments.": "FAIL: assert_equals: expected \"<test></test><x></x><y></y><z></z>\" but got \"<test></test><y></y><z></z><x></x>\"",
     "Element.after() with one sibling of child and text as arguments.": "FAIL: assert_equals: expected \"<test></test><x></x>21<y></y>\" but got \"<test></test>2<x></x>1<y></y>\"",
     "Element.after() with some siblings of child as arguments; no changes in tree.": "FAIL: assert_equals: expected \"<test></test><v></v><x></x><y></y><z></z>\" but got \"<test></test><x></x><v></v><y></y><z></z>\"",
     "Element.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: assert_equals: expected \"<test></test><x></x><y></y><z></z>\" but got \"<test></test><y></y><x></x><z></z>\"",
-    "Text.after() when pre-insert behaves like append.": "FAIL: not a function",
-    "Text.after() with all siblings of child as arguments.": "FAIL: not a function",
-    "Text.after() with context object itself and node as the arguments, switching positions.": "FAIL: not a function",
-    "Text.after() with context object itself as the argument.": "FAIL: not a function",
-    "Text.after() with null as an argument.": "FAIL: not a function",
-    "Text.after() with one element and text as arguments.": "FAIL: not a function",
-    "Text.after() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Text.after() with only one element as an argument.": "FAIL: not a function",
-    "Text.after() with only text as an argument.": "FAIL: not a function",
-    "Text.after() with some siblings of child as arguments; no changes in tree.": "FAIL: not a function",
-    "Text.after() with the empty string as an argument.": "FAIL: not a function",
-    "Text.after() with undefined as an argument.": "FAIL: not a function",
-    "Text.after() without any argument.": "FAIL: not a function",
-    "Text.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: not a function"
-  },
-  "dom/nodes/ChildNode-before.html": {
-    "Comment.before() when pre-insert behaves like prepend.": "FAIL: not a function",
-    "Comment.before() with all siblings of child as arguments.": "FAIL: not a function",
-    "Comment.before() with context object itself and node as the arguments, switching positions.": "FAIL: not a function",
-    "Comment.before() with context object itself as the argument.": "FAIL: not a function",
-    "Comment.before() with null as an argument.": "FAIL: not a function",
-    "Comment.before() with one element and text as arguments.": "FAIL: not a function",
-    "Comment.before() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Comment.before() with only one element as an argument.": "FAIL: not a function",
-    "Comment.before() with only text as an argument.": "FAIL: not a function",
-    "Comment.before() with some siblings of child as arguments; no changes in tree.": "FAIL: not a function",
-    "Comment.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: not a function",
-    "Comment.before() with the empty string as an argument.": "FAIL: not a function",
-    "Comment.before() with undefined as an argument.": "FAIL: not a function",
-    "Comment.before() without any argument.": "FAIL: not a function",
-    "Text.before() when pre-insert behaves like prepend.": "FAIL: not a function",
-    "Text.before() with all siblings of child as arguments.": "FAIL: not a function",
-    "Text.before() with context object itself and node as the arguments, switching positions.": "FAIL: not a function",
-    "Text.before() with context object itself as the argument.": "FAIL: not a function",
-    "Text.before() with null as an argument.": "FAIL: not a function",
-    "Text.before() with one element and text as arguments.": "FAIL: not a function",
-    "Text.before() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Text.before() with only one element as an argument.": "FAIL: not a function",
-    "Text.before() with only text as an argument.": "FAIL: not a function",
-    "Text.before() with some siblings of child as arguments; no changes in tree.": "FAIL: not a function",
-    "Text.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: not a function",
-    "Text.before() with the empty string as an argument.": "FAIL: not a function",
-    "Text.before() with undefined as an argument.": "FAIL: not a function",
-    "Text.before() without any argument.": "FAIL: not a function"
+    "Text.after() with all siblings of child as arguments.": "FAIL: assert_equals: expected \"test<x></x><y></y><z></z>\" but got \"test<y></y><z></z><x></x>\"",
+    "Text.after() with one sibling of child and text as arguments.": "FAIL: assert_equals: expected \"test<x></x>21<y></y>\" but got \"test2<x></x>1<y></y>\"",
+    "Text.after() with some siblings of child as arguments; no changes in tree.": "FAIL: assert_equals: expected \"test<v></v><x></x><y></y><z></z>\" but got \"test<x></x><v></v><y></y><z></z>\"",
+    "Text.before() with some siblings of child as arguments; no changes in tree; viable sibling is first child.": "FAIL: assert_equals: expected \"test<x></x><y></y><z></z>\" but got \"test<y></y><x></x><z></z>\""
   },
   "dom/nodes/ChildNode-replaceWith.html": {
-    "Comment.replaceWith() on a parentless child with two elements as arguments.": "FAIL: not a function",
-    "Comment.replaceWith() with empty string as an argument.": "FAIL: not a function",
-    "Comment.replaceWith() with null as an argument.": "FAIL: not a function",
-    "Comment.replaceWith() with one element and text as arguments.": "FAIL: not a function",
-    "Comment.replaceWith() with one sibling of child and child itself as arguments.": "FAIL: not a function",
-    "Comment.replaceWith() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Comment.replaceWith() with only one element as an argument.": "FAIL: not a function",
-    "Comment.replaceWith() with only text as an argument.": "FAIL: not a function",
-    "Comment.replaceWith() with sibling of child as arguments.": "FAIL: not a function",
-    "Comment.replaceWith() with undefined as an argument.": "FAIL: not a function",
-    "Comment.replaceWith() without any argument.": "FAIL: not a function",
+    "Comment.replaceWith() with one sibling of child and child itself as arguments.": "FAIL: assert_equals: expected \"<x></x><!--test-->text\" but got \"<x></x>text\"",
     "Element.replaceWith() with one sibling of child and child itself as arguments.": "FAIL: assert_equals: expected \"<x></x><test></test>text\" but got \"<x></x>text\"",
-    "Text.replaceWith() on a parentless child with two elements as arguments.": "FAIL: not a function",
-    "Text.replaceWith() with empty string as an argument.": "FAIL: not a function",
-    "Text.replaceWith() with null as an argument.": "FAIL: not a function",
-    "Text.replaceWith() with one element and text as arguments.": "FAIL: not a function",
-    "Text.replaceWith() with one sibling of child and child itself as arguments.": "FAIL: not a function",
-    "Text.replaceWith() with one sibling of child and text as arguments.": "FAIL: not a function",
-    "Text.replaceWith() with only one element as an argument.": "FAIL: not a function",
-    "Text.replaceWith() with only text as an argument.": "FAIL: not a function",
-    "Text.replaceWith() with sibling of child as arguments.": "FAIL: not a function",
-    "Text.replaceWith() with undefined as an argument.": "FAIL: not a function",
-    "Text.replaceWith() without any argument.": "FAIL: not a function"
+    "Text.replaceWith() with one sibling of child and child itself as arguments.": "FAIL: assert_equals: expected \"<x></x>testtext\" but got \"<x></x>text\""
   },
   "dom/nodes/Comment-constructor.html": {
     "__harness__": "status 2: ",
-    "new Comment() should get the correct ownerDocument across globals": "TIMEOUT: Test timed out",
-    "new Comment(): \"\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"&amp;\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"-\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"--\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"-->\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"<!--\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"\\0\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): \"\\0test\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Comment(): 42": "FAIL: stale or null node handle",
-    "new Comment(): no arguments": "FAIL: Error converting from js 'undefined' into type 'f64'",
-    "new Comment(): null": "FAIL: Error converting from js 'null' into type 'f64'",
-    "new Comment(): two arguments": "FAIL: Error converting from js 'object' into type 'f64'",
-    "new Comment(): undefined": "FAIL: Error converting from js 'undefined' into type 'f64'"
+    "new Comment() should get the correct ownerDocument across globals": "TIMEOUT: Test timed out"
   },
   "dom/nodes/DOMImplementation-createDocument.html": {
     "DOMImplementation.createDocument(namespace, qualifiedName, doctype)": "FAIL: cannot read property 'createDocumentType' of undefined",
@@ -2664,10 +2456,6 @@
     "True 'deep' argument.": "FAIL: not a function",
     "Undefined 'deep' argument.": "FAIL: not a function"
   },
-  "dom/nodes/DocumentFragment-constructor.html": {
-    "Create a valid document DocumentFragment": "FAIL: Error converting from js 'undefined' into type 'f64'",
-    "Sets the owner document to the current global object associated document": "FAIL: Error converting from js 'undefined' into type 'f64'"
-  },
   "dom/nodes/DocumentFragment-getElementById.html": {
     "Empty string ID values": "FAIL: not a function",
     "It must return null when there are no matches": "FAIL: not a function",
@@ -2806,22 +2594,10 @@
   },
   "dom/nodes/MutationObserver-characterData.html": {
     "__harness__": "status 2: ",
-    "characterData Comment: data mutations": "FAIL: not a function",
-    "characterData ProcessingInstruction: data mutations": "FAIL: not a function",
     "characterData Range.deleteContents: child and data removal mutation": "TIMEOUT: Test timed out",
     "characterData Range.deleteContents: child and data removal mutation (2)": "TIMEOUT: Test timed out",
     "characterData Range.extractContents: child and data removal mutation": "TIMEOUT: Test timed out",
-    "characterData Range.extractContents: child and data removal mutation (2)": "TIMEOUT: Test timed out",
-    "characterData Text.appendData: empty string mutation": "FAIL: not a function",
-    "characterData Text.appendData: null string mutation": "FAIL: not a function",
-    "characterData Text.appendData: simple mutation": "FAIL: not a function",
-    "characterData Text.deleteData: empty mutation": "FAIL: not a function",
-    "characterData Text.deleteData: simple mutation": "FAIL: not a function",
-    "characterData Text.insertData: empty string mutation": "FAIL: not a function",
-    "characterData Text.insertData: null string mutation": "FAIL: not a function",
-    "characterData Text.insertData: simple mutation": "FAIL: not a function",
-    "characterData Text.replaceData: empty mutation": "FAIL: not a function",
-    "characterData Text.replaceData: simple mutation": "FAIL: not a function"
+    "characterData Range.extractContents: child and data removal mutation (2)": "TIMEOUT: Test timed out"
   },
   "dom/nodes/MutationObserver-childList.html": {
     "Range (r100) is created": "FAIL: not a function",
@@ -2961,21 +2737,18 @@
     "detachedDiv.childElementCount": "FAIL: assert_equals: expected (number) 2 but got (undefined) undefined",
     "detachedDiv.nextElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "detachedDiv.previousElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
-    "detachedForeignTextNode.wholeText": "FAIL: assert_equals: expected (string) \"Cdefghij\" but got (undefined) undefined",
     "detachedPara1.childElementCount": "FAIL: assert_equals: expected (number) 0 but got (undefined) undefined",
     "detachedPara1.nextElementSibling": "FAIL: assert_equals: expected (object) Element node <p>Wxyzabcd</p> but got (undefined) undefined",
     "detachedPara1.previousElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "detachedPara2.childElementCount": "FAIL: assert_equals: expected (number) 0 but got (undefined) undefined",
     "detachedPara2.nextElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "detachedPara2.previousElementSibling": "FAIL: assert_equals: expected (object) Element node <p>Opqrstuv</p> but got (undefined) undefined",
-    "detachedTextNode.wholeText": "FAIL: assert_equals: expected (string) \"Uvwxyzab\" but got (undefined) undefined",
     "detachedXmlElement.childElementCount": "FAIL: assert_equals: expected (number) 0 but got (undefined) undefined",
     "detachedXmlElement.namespaceURI": "FAIL: assert_equals: expected (object) null but got (string) \"http://www.w3.org/1999/xhtml\"",
     "detachedXmlElement.nextElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "detachedXmlElement.nodeName": "FAIL: assert_equals: expected \"everyone-hates-hyphenated-element-names\" but got \"EVERYONE-HATES-HYPHENATED-ELEMENT-NAMES\"",
     "detachedXmlElement.previousElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "detachedXmlElement.tagName": "FAIL: assert_equals: expected \"everyone-hates-hyphenated-element-names\" but got \"EVERYONE-HATES-HYPHENATED-ELEMENT-NAMES\"",
-    "detachedXmlTextNode.wholeText": "FAIL: assert_equals: expected (string) \"Klmnopqr\" but got (undefined) undefined",
     "document.URL": "FAIL: assert_equals: expected (string) \"https://wpt.test/dom/nodes/Node-properties.html\" but got (undefined) undefined",
     "document.compatMode": "FAIL: assert_equals: expected (string) \"CSS1Compat\" but got (undefined) undefined",
     "document.documentURI": "FAIL: assert_equals: expected (string) \"https://wpt.test/dom/nodes/Node-properties.html\" but got (undefined) undefined",
@@ -2988,7 +2761,6 @@
     "foreignPara2.childElementCount": "FAIL: assert_equals: expected (number) 0 but got (undefined) undefined",
     "foreignPara2.nextElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "foreignPara2.previousElementSibling": "FAIL: assert_equals: expected (object) Element node <p>Efghijkl</p> but got (undefined) undefined",
-    "foreignTextNode.wholeText": "FAIL: assert_equals: expected (string) \"I admit that I harbor doubts about whether we really need so many things to test, but it's too late to stop now.\" but got (undefined) undefined",
     "paras[0].childElementCount": "FAIL: assert_equals: expected (number) 0 but got (undefined) undefined",
     "paras[0].nextElementSibling": "FAIL: assert_equals: expected (object) Element node <p id=\"b\" style=\"display:none\">Ijklmnop",
     "paras[0].previousElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
@@ -3019,8 +2791,7 @@
     "xmlElement.nextElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
     "xmlElement.nodeName": "FAIL: assert_equals: expected \"igiveuponcreativenames\" but got \"IGIVEUPONCREATIVENAMES\"",
     "xmlElement.previousElementSibling": "FAIL: assert_equals: expected (object) null but got (undefined) undefined",
-    "xmlElement.tagName": "FAIL: assert_equals: expected \"igiveuponcreativenames\" but got \"IGIVEUPONCREATIVENAMES\"",
-    "xmlTextNode.wholeText": "FAIL: assert_equals: expected (string) \"do re mi fa so la ti\" but got (undefined) undefined"
+    "xmlElement.tagName": "FAIL: assert_equals: expected \"igiveuponcreativenames\" but got \"IGIVEUPONCREATIVENAMES\""
   },
   "dom/nodes/Node-removeChild.html": {
     "Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.": "FAIL: cannot read property 'document' of undefined",
@@ -3052,40 +2823,8 @@
   "dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html": {
     "NodeList (static collection) \"length\" getter tampered (Array.prototype.indexOf)": "FAIL: NodeList is not defined"
   },
-  "dom/nodes/ParentNode-append.html": {
-    "DocumentFragment.append() with null as an argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.append() with null as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.append() with one element and text as argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.append() with only one element as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.append() with only text as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.append() with the same element twice.": "FAIL: not a function",
-    "DocumentFragment.append() with undefined as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.append() without any argument, on a parent having no child.": "FAIL: not a function",
-    "If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, df)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, df)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc.createTextNode(\"text\"))\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a doctype and parent is a document with an element, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doctype)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doctype)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, el)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc2)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3"
-  },
   "dom/nodes/ParentNode-children.html": {
     "ParentNode.children should be a live collection": "FAIL: HTMLCollection is not defined"
-  },
-  "dom/nodes/ParentNode-prepend.html": {
-    "DocumentFragment.prepend() with null as an argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.prepend() with null as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.prepend() with one element and text as argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.prepend() with only one element as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.prepend() with only text as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.prepend() with undefined as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.prepend() without any argument, on a parent having no child.": "FAIL: not a function",
-    "If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, df)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, df)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc.createTextNode(\"text\"))\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doctype)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, el)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc2)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3"
   },
   "dom/nodes/ParentNode-querySelector-All.html": {
     "Selectors-API Test Suite: HTML": "TIMEOUT: Test timed out",
@@ -3100,63 +2839,18 @@
     "querySelectorAll with :scope": "FAIL: assert_array_equals: lengths differ, expected array [Element node <p><span>hello</span></p>] length 1, got [] length 0"
   },
   "dom/nodes/ParentNode-replaceChildren.html": {
-    "Document.replaceChildren() with a DocumentFragment containing a single element, replacing an existing doctype and element.": "FAIL: not a function",
-    "Document.replaceChildren() with a doctype, replacing an existing doctype and element.": "FAIL: not a function",
-    "Document.replaceChildren() with an element, replacing an existing doctype and element.": "FAIL: not a function",
-    "Document.replaceChildren() with text throws a HierarchyRequestError.": "FAIL: assert_throws_dom: function \"() => doc.replaceChildren(\"text\")\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.replaceChildren() with two elements throws a HierarchyRequestError.": "FAIL: assert_throws_dom: function \"() => doc.replaceChildren(doc.createElement(\"a\"), doc.createElement(\"b\"))\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.replaceChildren() without any argument, removing an existing doctype and element.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() should move nodes in the right order": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with null as an argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with null as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with one element and text as argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with only one element as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with only text as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() with undefined as an argument, on a parent having no child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() without any argument, on a parent having a child.": "FAIL: not a function",
-    "DocumentFragment.replaceChildren() without any argument, on a parent having no child.": "FAIL: not a function",
+    "DocumentFragment.replaceChildren() should move nodes in the right order": "FAIL: cannot read property 'Symbol.iterator' of undefined",
     "Element.replaceChildren() should move nodes in the right order": "FAIL: assert_equals: phase expected 1 but got 0",
-    "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, df)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc.createTextNode(\"text\"))\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.": "FAIL: assert_throws_dom: function \"() => insert(doc, doc2)\" threw object \"TypeError: cannot read property 'length' of undefined\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
     "There should be MutationRecords for the nodes removed from another parent node.": "TIMEOUT: Test timed out",
     "There should be a MutationRecord for the node removed from another parent node.": "TIMEOUT: Test timed out",
     "__harness__": "status 2: "
   },
   "dom/nodes/Text-constructor.html": {
     "__harness__": "status 2: ",
-    "new Text() should get the correct ownerDocument across globals": "TIMEOUT: Test timed out",
-    "new Text(): \"\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"&amp;\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"-\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"--\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"-->\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"<!--\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"\\0\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): \"\\0test\"": "FAIL: Error converting from js 'string' into type 'f64'",
-    "new Text(): 42": "FAIL: stale or null node handle",
-    "new Text(): no arguments": "FAIL: Error converting from js 'undefined' into type 'f64'",
-    "new Text(): null": "FAIL: Error converting from js 'null' into type 'f64'",
-    "new Text(): two arguments": "FAIL: Error converting from js 'object' into type 'f64'",
-    "new Text(): undefined": "FAIL: Error converting from js 'undefined' into type 'f64'"
-  },
-  "dom/nodes/Text-splitText.html": {
-    "Split child": "FAIL: not a function",
-    "Split empty text": "FAIL: not a function",
-    "Split root": "FAIL: not a function",
-    "Split text after end of data": "FAIL: assert_throws_dom: function \"function () { text.splitText(10) }\" threw object \"TypeError: not a function\" that is not a DOMException INDEX_SIZE_ERR: property \"code\" is equal to undefined, expected 1",
-    "Split text at beginning": "FAIL: not a function",
-    "Split text at end": "FAIL: not a function"
-  },
-  "dom/nodes/Text-wholeText.html": {
-    "wholeText returns text of all Text nodes logically adjacent to the node, in document order.": "FAIL: assert_equals: expected (string) \"a\" but got (undefined) undefined"
+    "new Text() should get the correct ownerDocument across globals": "TIMEOUT: Test timed out"
   },
   "dom/nodes/append-on-Document.html": {
-    "Document.append() with only one element as an argument, on a Document having no child.": "FAIL: not a function",
-    "Document.append() with only one element as an argument, on a Document having one child.": "FAIL: assert_throws_dom: function \"function() { parent.append(y); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.append() with text as an argument, on a Document having no child.": "FAIL: assert_throws_dom: function \"function() { parent.append('text'); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.append() with two elements as the argument, on a Document having no child.": "FAIL: assert_throws_dom: function \"function() { parent.append(x, y); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.append() without any argument, on a Document having no child.": "FAIL: not a function"
+    "Document.append() with two elements as the argument, on a Document having no child.": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <x></x>] length 1"
   },
   "dom/nodes/attributes-namednodemap.html": {
     "an attribute set by setAttribute should be accessible as a field on the `attributes` field of an Element": "FAIL: cannot read property 'value' of undefined",
@@ -3503,10 +3197,10 @@
     "invalid syntax for insertAdjacentText": "FAIL: assert_throws_dom: function \"function() {"
   },
   "dom/nodes/insertion-removing-steps/Node-append-form-and-script-from-fragment.html": {
-    "When adding a script+form in a fragment and the form matches an associated element, the script that checks whether the button is associated to the form should run after inserting the form": "FAIL: not a function"
+    "When adding a script+form in a fragment and the form matches an associated element, the script that checks whether the button is associated to the form should run after inserting the form": "FAIL: assert_equals: expected (object) Element node <form id=\"someForm\"></form> but got (undefined) undefined"
   },
   "dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html": {
-    "<meta name=referrer> gets processed and applied in the post-insertion steps": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\""
+    "<meta name=referrer> gets processed and applied in the post-insertion steps": "FAIL: assert_equals: preMetaReferrer is the full URL; by the time the first script runs in its post-insertion steps, the later-inserted meta tag has not run its post-insertion steps, which is where meta tags are processed expected (string) \"https://wpt.test/dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html\" but got (undefined) undefined"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-button-from-div.html": {
     "Script inserted before a form-associated button can observe the button's form, because by the time the script executes, the DOM insertion that associates the button with the form is already done": "FAIL: assert_equals: expected Element node <form id=\"form\"><div><script>"
@@ -3515,7 +3209,7 @@
     "An earlier-inserted script can upgrade a later-inserted custom element, whose upgrading is synchronously observable to the script, since DOM insertion has been completed by the time it runs": "FAIL: assert_true: expected true got false"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-default-style-meta-from-fragment.html": {
-    "Inserting <meta> that uses alternate stylesheets, applies the style during DOM post-insertion steps": "FAIL: not a function"
+    "Inserting <meta> that uses alternate stylesheets, applies the style during DOM post-insertion steps": "FAIL: assert_true: script has run after insertion expected true got false"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-div-from-fragment.html": {
     "Earlier-inserted scripts can observe the parentNode of later-inserted nodes, because script runs after DOM insertion completes": "FAIL: assert_equals: expected Element node <head><meta charset=\"utf-8\">"
@@ -3529,20 +3223,20 @@
     "Empty <source> immediately sets media.networkState during DOM insertion, so that an earlier-running script can observe networkState": "FAIL: HTMLMediaElement is not defined"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-style.html": {
-    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a DocumentFragment) being applied": "FAIL: Error converting from js 'string' into type 'f64'",
-    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a div) being applied": "FAIL: Error converting from js 'string' into type 'f64'",
+    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a DocumentFragment) being applied": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\", 2] length 2, got [] length 0",
+    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a div) being applied": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\", 2] length 2, got [] length 0",
     "Earlier-inserted <script> (via a DocumentFragment) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\"] length 1, got [] length 0",
     "Earlier-inserted <script> (via a append()) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: expected property 0 to be \"sheet\" but got null (expected array [\"sheet\"] got [null])",
     "Earlier-inserted <script> (via a div) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\"] length 1, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-in-script.html": {
-    "An outer script whose preparation/execution gets triggered by the insertion of a 'nested'/'inner' script, executes *before* the inner script executes": "FAIL: Error converting from js 'string' into type 'f64'"
+    "An outer script whose preparation/execution gets triggered by the insertion of a 'nested'/'inner' script, executes *before* the inner script executes": "FAIL: assert_array_equals: lengths differ, expected array [\"s1\", \"s2\", \"s2ran\"] length 3, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-text-and-script-in-style.html": {
-    "All style rules appended to a <style> element are inserted and script-observable to scripts inserted in the `<style>` element, by the time scripts execute after DOM insertions.": "FAIL: Error converting from js 'string' into type 'f64'"
+    "All style rules appended to a <style> element are inserted and script-observable to scripts inserted in the `<style>` element, by the time scripts execute after DOM insertions.": "FAIL: assert_array_equals: lengths differ, expected array [2] length 1, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-text-in-script.html": {
-    "Node.appendChild: inserting two text nodes in an empty script": "FAIL: Error converting from js 'string' into type 'f64'"
+    "Node.appendChild: inserting two text nodes in an empty script": "FAIL: assert_array_equals: lengths differ, expected array [\"t1\", \"t2\"] length 2, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts-from-fragment.html": {
     "Node.appendChild: inserting three scripts from a document fragment": "FAIL: assert_array_equals: lengths differ, expected array [\"s3\", \"s1\", \"s2\"] length 3, got [] length 0"
@@ -3573,7 +3267,7 @@
     "Moving a node from disconnected->connected throws a HIERARCHY_REQUEST_ERR": "FAIL: assert_throws_dom: function \"() => connectedDestination.moveBefore(p, null)\" threw object \"TypeError: not a function\" that is not a DOMException HIERARCHY_REQUEST_ERR: property \"code\" is equal to undefined, expected 3",
     "No custom element callbacks are run during disconnected moveBefore()": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
     "moveBefore on a paragraph's Text node child": "FAIL: not a function",
-    "moveBefore with an Element or CharacterData succeeds": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: Error converting from js 'string' into type 'f64'\"",
+    "moveBefore with an Element or CharacterData succeeds": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
     "moveBefore with reference child whose parent is NOT the destination parent (context node) throws a NotFoundError.": "FAIL: assert_throws_dom: function \"() => {",
     "moveBefore() CharacterData into a Document": "FAIL: cannot read property 'createComment' of null",
     "moveBefore() into a Document throws a HierarchyRequestError": "FAIL: cannot read property 'querySelector' of null",
@@ -3788,11 +3482,7 @@
     "Valid and invalid characters in setAttributeNS and createAttributeNS.": "FAIL: assert_unreached: element.setAttributeNS should not have thrown an error for: code points: [115,109,97,108,108,69,109,111,106,105,55356,56726], string: \"smallEmoji🆖\" code points: [97,116,116,114], string: \"attr\" TypeError: not a function Reached unreachable code"
   },
   "dom/nodes/prepend-on-Document.html": {
-    "Document.append() with only one element as an argument, on a Document having one child.": "FAIL: assert_throws_dom: function \"function() { parent.prepend(y); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.prepend() with only one element as an argument, on a Document having no child.": "FAIL: not a function",
-    "Document.prepend() with text as an argument, on a Document having no child.": "FAIL: assert_throws_dom: function \"function() { parent.prepend('text'); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.prepend() with two elements as the argument, on a Document having no child.": "FAIL: assert_throws_dom: function \"function() { parent.prepend(x, y); }\" threw object \"TypeError: not a function\" that is not a DOMException HierarchyRequestError: property \"code\" is equal to undefined, expected 3",
-    "Document.prepend() without any argument, on a Document having no child.": "FAIL: not a function"
+    "Document.prepend() with two elements as the argument, on a Document having no child.": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <x></x>] length 1"
   },
   "dom/nodes/processing-instruction-attributes.html": {
     "Distinct attribute name (source: html-dom): ABC and abc": "FAIL: not a function",
