@@ -545,6 +545,88 @@
       const p = this.parentNode;
       if (p) p.removeChild(this);
     }
+    compareDocumentPosition(other) {
+      if (!(other instanceof Node)) {
+        throw new TypeError("compareDocumentPosition: argument is not a Node");
+      }
+      if (other === this) return 0;
+      // 双方到根的祖先链(含自身),根在前
+      const chain = (n) => {
+        const out = [];
+        for (let c = n; c; c = c.parentNode) out.unshift(c);
+        return out;
+      };
+      const a = chain(this);
+      const b = chain(other);
+      if (a[0] !== b[0]) {
+        // 不同树:DISCONNECTED,方向任意但必须稳定——用句柄序
+        return (
+          Node.DOCUMENT_POSITION_DISCONNECTED |
+          Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC |
+          (this._id < other._id
+            ? Node.DOCUMENT_POSITION_FOLLOWING
+            : Node.DOCUMENT_POSITION_PRECEDING)
+        );
+      }
+      // 找第一个分叉点
+      let i = 0;
+      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      if (i === a.length) {
+        // this 是 other 的祖先
+        return Node.DOCUMENT_POSITION_CONTAINED_BY | Node.DOCUMENT_POSITION_FOLLOWING;
+      }
+      if (i === b.length) {
+        return Node.DOCUMENT_POSITION_CONTAINS | Node.DOCUMENT_POSITION_PRECEDING;
+      }
+      // 兄弟序:分叉层的两个孩子在共同父节点下的先后
+      const siblings = a[i - 1].childNodes;
+      for (let j = 0; j < siblings.length; j++) {
+        if (siblings[j] === a[i]) return Node.DOCUMENT_POSITION_FOLLOWING;
+        if (siblings[j] === b[i]) return Node.DOCUMENT_POSITION_PRECEDING;
+      }
+      return Node.DOCUMENT_POSITION_DISCONNECTED;
+    }
+    // 规范的 locate-a-namespace 算法(按节点类型分派)
+    lookupNamespaceURI(prefix) {
+      if (prefix === "" || prefix === undefined) prefix = null;
+      else if (prefix !== null) prefix = String(prefix);
+      if (prefix === "xml") return "http://www.w3.org/XML/1998/namespace";
+      if (prefix === "xmlns") return "http://www.w3.org/2000/xmlns/";
+      let el = null;
+      if (this.nodeType === 1) el = this;
+      else if (this.nodeType === 9) el = this.documentElement;
+      else if (this.nodeType === 10 || this.nodeType === 11) return null;
+      else el = this.parentElement;
+      for (; el; el = el.parentElement) {
+        if (el.namespaceURI && el.prefix === prefix) return el.namespaceURI;
+        const attr = prefix === null ? "xmlns" : "xmlns:" + prefix;
+        const v = el.getAttribute(attr);
+        if (v !== null) return v === "" ? null : v;
+      }
+      return null;
+    }
+    lookupPrefix(namespace) {
+      if (namespace == null || namespace === "") return null;
+      namespace = String(namespace);
+      let el = null;
+      if (this.nodeType === 1) el = this;
+      else if (this.nodeType === 9) el = this.documentElement;
+      else if (this.nodeType === 10 || this.nodeType === 11) return null;
+      else el = this.parentElement;
+      for (; el; el = el.parentElement) {
+        if (el.namespaceURI === namespace && el.prefix !== null) return el.prefix;
+        for (const a of el.attributes) {
+          if (a.name.startsWith("xmlns:") && a.value === namespace) {
+            return a.name.slice(6);
+          }
+        }
+      }
+      return null;
+    }
+    isDefaultNamespace(namespace) {
+      if (namespace === "" || namespace === undefined) namespace = null;
+      return this.lookupNamespaceURI(null) === (namespace == null ? null : String(namespace));
+    }
     contains(other) {
       let cursor = other;
       while (cursor) {
@@ -568,11 +650,23 @@
       dom.setNodeValue(this._id, String(value));
     }
   }
-  Node.ELEMENT_NODE = 1;
-  Node.TEXT_NODE = 3;
-  Node.COMMENT_NODE = 8;
-  Node.DOCUMENT_NODE = 9;
-  Node.DOCUMENT_FRAGMENT_NODE = 11;
+  // WebIDL:常量同时存在于构造器与原型
+  {
+    const NODE_CONSTANTS = {
+      ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+      ENTITY_REFERENCE_NODE: 5, ENTITY_NODE: 6, PROCESSING_INSTRUCTION_NODE: 7,
+      COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10,
+      DOCUMENT_FRAGMENT_NODE: 11, NOTATION_NODE: 12,
+      DOCUMENT_POSITION_DISCONNECTED: 0x01, DOCUMENT_POSITION_PRECEDING: 0x02,
+      DOCUMENT_POSITION_FOLLOWING: 0x04, DOCUMENT_POSITION_CONTAINS: 0x08,
+      DOCUMENT_POSITION_CONTAINED_BY: 0x10,
+      DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 0x20,
+    };
+    for (const [k, v] of Object.entries(NODE_CONSTANTS)) {
+      Node[k] = v;
+      Node.prototype[k] = v;
+    }
+  }
 
   class DocumentFragment extends Node {
     get nodeName() {
