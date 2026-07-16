@@ -76,7 +76,17 @@ impl Loader for CacheLoader {
             }
             None => {
                 self.misses.borrow_mut().push(name.to_owned());
-                Err(Error::new_loading_message(name, "module not in prefetch cache"))
+                // 不返回 Err:加载失败会在引擎的 loaded_modules 里留下
+                // func_obj 为 NULL 的半初始化模块,下一个共享这条依赖链的
+                // 入口在 js_create_module_function 里撞空指针(quickjs-ng,
+                // WPT nested-imports.html 实测 SIGSEGV)。改成返回一个
+                // 求值即抛错的替身:bytecode 永远有效,错误走正常传播。
+                let source = format!(
+                    "throw new Error({});",
+                    serde_json::to_string(&format!("module not in prefetch cache: {name}"))
+                        .unwrap_or_else(|_| "\"module not in prefetch cache\"".into())
+                );
+                Module::declare(ctx.clone(), name, source)
             }
         }
     }
