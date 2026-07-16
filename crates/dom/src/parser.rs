@@ -197,13 +197,15 @@ impl TreeSink for Sink {
     fn append_doctype_to_document(
         &self,
         name: StrTendril,
-        _public_id: StrTendril,
-        _system_id: StrTendril,
+        public_id: StrTendril,
+        system_id: StrTendril,
     ) {
         let mut doc = self.doc.borrow_mut();
         let root = doc.root();
         let dt = doc.create_node(NodeData::Doctype {
             name: name.to_string(),
+            public_id: public_id.to_string(),
+            system_id: system_id.to_string(),
         });
         doc.append_child(root, dt);
     }

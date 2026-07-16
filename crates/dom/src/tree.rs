@@ -33,6 +33,8 @@ pub enum NodeData {
     Fragment,
     Doctype {
         name: String,
+        public_id: String,
+        system_id: String,
     },
     Text {
         contents: String,
@@ -303,7 +305,11 @@ impl Document {
         match data {
             NodeData::Document => NodeData::Document,
             NodeData::Fragment => NodeData::Fragment,
-            NodeData::Doctype { name } => NodeData::Doctype { name: name.clone() },
+            NodeData::Doctype { name, public_id, system_id } => NodeData::Doctype {
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+            },
             NodeData::Text { contents } => NodeData::Text {
                 contents: contents.clone(),
             },

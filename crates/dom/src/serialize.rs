@@ -22,7 +22,7 @@ impl SerializableNode<'_> {
                     self.serialize_node(child, serializer)?;
                 }
             }
-            NodeData::Doctype { name } => serializer.write_doctype(name)?,
+            NodeData::Doctype { name, .. } => serializer.write_doctype(name)?,
             NodeData::Text { contents } => serializer.write_text(contents)?,
             NodeData::Comment { contents } => serializer.write_comment(contents)?,
             NodeData::ProcessingInstruction { target, data } => {

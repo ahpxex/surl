@@ -107,6 +107,8 @@ pub fn install(
             let root = doc.create_node(NodeData::Document);
             let dt = doc.create_node(NodeData::Doctype {
                 name: "html".into(),
+                public_id: String::new(),
+                system_id: String::new(),
             });
             doc.append_child(root, dt);
             let html = create_html_element(doc, "html");
@@ -186,8 +188,24 @@ pub fn install(
     }
     {
         let dom = dom.clone();
-        op!("createDoctype", move |name: String| {
-            fid(dom.borrow_mut().create_node(NodeData::Doctype { name }))
+        op!("doctypeMeta", move |ctx: Ctx<'_>, id: f64| -> Result<Vec<String>> {
+            let doc = dom.borrow();
+            Ok(match &doc.node(nid(&ctx, &doc, id)?).data {
+                NodeData::Doctype { public_id, system_id, .. } => {
+                    vec![public_id.clone(), system_id.clone()]
+                }
+                _ => vec![String::new(), String::new()],
+            })
+        });
+    }
+    {
+        let dom = dom.clone();
+        op!("createDoctype", move |name: String, public_id: String, system_id: String| {
+            fid(dom.borrow_mut().create_node(NodeData::Doctype {
+                name,
+                public_id,
+                system_id,
+            }))
         });
     }
     {
@@ -312,7 +330,7 @@ pub fn install(
                 NodeData::Comment { .. } => "#comment".into(),
                 NodeData::Document => "#document".into(),
                 NodeData::Fragment => "#document-fragment".into(),
-                NodeData::Doctype { name } => name.clone(),
+                NodeData::Doctype { name, .. } => name.clone(),
                 NodeData::ProcessingInstruction { target, .. } => target.clone(),
             })
         });

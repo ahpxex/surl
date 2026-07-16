@@ -708,6 +708,68 @@
   // WebIDL unsigned long:ToUint32(-1 → 4294967295,测试依赖这个回绕)
   const toUint32 = (v) => Number(v) >>> 0;
 
+  // ---- 名字校验:DOM 规范 2023+ 的算法(比 XML QName 宽松得多)----
+  const XML_NS_URI = "http://www.w3.org/XML/1998/namespace";
+  const XMLNS_NS_URI = "http://www.w3.org/2000/xmlns/";
+  const isAsciiAlpha = (c) => (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a);
+
+  function validElementLocalName(name) {
+    if (name.length === 0) return false;
+    const c0 = name.codePointAt(0);
+    if (isAsciiAlpha(c0)) {
+      // ASCII 字母开头:整体不含空白、NULL、"/"、">"
+      return !/[\t\n\f\r \u0000/>]/.test(name);
+    }
+    if (c0 !== 0x3a && c0 !== 0x5f && c0 < 0x80) return false;
+    for (const ch of name.slice(String.fromCodePoint(c0).length)) {
+      const c = ch.codePointAt(0);
+      if (
+        !isAsciiAlpha(c) &&
+        !(c >= 0x30 && c <= 0x39) &&
+        c !== 0x2d &&
+        c !== 0x2e &&
+        c !== 0x3a &&
+        c !== 0x5f &&
+        c < 0x80
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 前缀:非空即可,只排除空白/NULL/"/"/">"/":"(2023+ 规范,数字开头合法)
+  function validPrefix(prefix) {
+    return prefix.length > 0 && !/[\t\n\f\r \u0000/>:]/.test(prefix);
+  }
+
+  function validateAndExtract(namespace, qualifiedName, validLocal) {
+    namespace = namespace == null || namespace === "" ? null : String(namespace);
+    let prefix = null;
+    let localName = qualifiedName;
+    const idx = qualifiedName.indexOf(":");
+    if (idx !== -1) {
+      prefix = qualifiedName.slice(0, idx);
+      localName = qualifiedName.slice(idx + 1);
+    }
+    if ((prefix !== null && !validPrefix(prefix)) || !validLocal(localName)) {
+      throw new DOMException(
+        "invalid qualified name: " + qualifiedName,
+        "InvalidCharacterError",
+      );
+    }
+    if (prefix !== null && namespace === null) {
+      throw new DOMException("prefix requires a namespace", "NamespaceError");
+    }
+    if (prefix === "xml" && namespace !== XML_NS_URI) {
+      throw new DOMException("xml prefix requires the XML namespace", "NamespaceError");
+    }
+    if ((qualifiedName === "xmlns" || prefix === "xmlns") !== (namespace === XMLNS_NS_URI)) {
+      throw new DOMException("xmlns misuse", "NamespaceError");
+    }
+    return { namespace, prefix, localName };
+  }
+
   class CharacterData extends Node {
     get data() {
       return this.nodeValue;
@@ -809,10 +871,10 @@
       return dom.nodeName(this._id);
     }
     get publicId() {
-      return "";
+      return dom.doctypeMeta(this._id)[0];
     }
     get systemId() {
-      return "";
+      return dom.doctypeMeta(this._id)[1];
     }
   }
 
@@ -1198,10 +1260,22 @@
       return wrap(dom.getElementById(this._id, String(id)));
     }
     createElement(tag) {
-      return this._adopt(wrap(dom.createElement(String(tag))));
+      tag = String(tag);
+      if (!validElementLocalName(tag)) {
+        throw new DOMException("createElement: invalid name: " + tag, "InvalidCharacterError");
+      }
+      return this._adopt(wrap(dom.createElement(tag)));
     }
     createElementNS(ns, tag) {
-      return this._adopt(wrap(dom.createElementNS(ns == null ? "" : String(ns), String(tag))));
+      const v = validateAndExtract(ns, String(tag), validElementLocalName);
+      return this._adopt(
+        wrap(
+          dom.createElementNS(
+            v.namespace === null ? "" : v.namespace,
+            v.prefix === null ? v.localName : v.prefix + ":" + v.localName,
+          ),
+        ),
+      );
     }
     createTextNode(text) {
       return this._adopt(wrap(dom.createText(String(text))));
@@ -1398,6 +1472,14 @@
   g.HTMLIFrameElement = HTMLIFrameElement;
   g.SVGElement = class SVGElement extends Element {};
   g.Document = DocumentNode;
+  Object.defineProperty(DocumentNode.prototype, "contentType", {
+    configurable: true,
+    get() {
+      return this._contentType || "text/html";
+    },
+  });
+  class XMLDocument extends DocumentNode {}
+  g.XMLDocument = XMLDocument;
   g.DocumentFragment = DocumentFragment;
   g.HTMLDocument = DocumentNode;
 
@@ -2871,16 +2953,53 @@
       // 同一 arena、另一棵树:见 ops 的 createHTMLDocument
       return wrap(dom.createHTMLDocument(title === undefined ? "" : String(title)));
     }
-    createDocumentType(name) {
-      return wrap(dom.createDoctype(String(name)));
+    createDocumentType(name, publicId, systemId) {
+      name = String(name);
+      // 2023+ 规范的 valid doctype name:不含空白/NULL/">"
+      // 空串合法(2023+ 规范);只排除空白/NULL/">"
+      if (/[\t\n\f\r \u0000>]/.test(name)) {
+        throw new DOMException(
+          "createDocumentType: invalid name: " + name,
+          "InvalidCharacterError",
+        );
+      }
+      return wrap(
+        dom.createDoctype(
+          name,
+          publicId === undefined ? "" : String(publicId),
+          systemId === undefined ? "" : String(systemId),
+        ),
+      );
     }
     createDocument(ns, qualifiedName, doctype) {
-      const docNode = wrap(dom.createBareDocument());
+      // WebIDL [LegacyNullToEmptyString] DOMString:null → "",
+      // 但 undefined → "undefined"(字符串化,测试向量明确要求)
+      qualifiedName = qualifiedName === null ? "" : String(qualifiedName);
+      let rootMeta = null;
+      if (qualifiedName !== "") {
+        rootMeta = validateAndExtract(ns, qualifiedName, validElementLocalName);
+      }
+      const bareId = dom.createBareDocument();
+      wrapping = true;
+      let docNode;
+      try {
+        docNode = new XMLDocument(bareId);
+      } finally {
+        wrapping = false;
+      }
+      cache.set(bareId, docNode);
       docNode._contentType = "application/xml";
       if (doctype) docNode.appendChild(doctype);
-      if (qualifiedName) {
+      if (rootMeta) {
         docNode.appendChild(
-          wrap(dom.createElementNS(ns == null ? "" : String(ns), String(qualifiedName))),
+          wrap(
+            dom.createElementNS(
+              rootMeta.namespace === null ? "" : rootMeta.namespace,
+              rootMeta.prefix === null
+                ? rootMeta.localName
+                : rootMeta.prefix + ":" + rootMeta.localName,
+            ),
+          ),
         );
       }
       return docNode;
@@ -2889,10 +3008,12 @@
       return true;
     }
   }
-  Object.defineProperty(g.document, "implementation", {
+  // 挂在原型上:createHTMLDocument/createDocument 造出的文档也要有
+  Object.defineProperty(DocumentNode.prototype, "implementation", {
     configurable: true,
     get() {
-      return new DOMImplementation();
+      if (!this._implementation) this._implementation = new DOMImplementation();
+      return this._implementation;
     },
   });
 
