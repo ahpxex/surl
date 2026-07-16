@@ -61,8 +61,12 @@ def norm_text(s):
 def norm_href(href, base):
     try:
         u = urllib.parse.urlsplit(urllib.parse.urljoin(base, href.strip()))
-        # 空路径补 "/":surl 侧的 url crate 总会补,原始 attr 常常没有
-        return urllib.parse.urlunsplit(u._replace(path=u.path or "/"))
+        # 空路径补 "/":surl 侧的 url crate 总会补,原始 attr 常常没有;
+        # 整体 percent-decode:%E2%80%93 与原样 Unicode 是同一个 URL
+        # (wikipedia 实测 109 条"缺失"全是编码写法差异)
+        return urllib.parse.unquote(
+            urllib.parse.urlunsplit(u._replace(path=u.path or "/"))
+        )
     except ValueError:
         return href.strip()
 
