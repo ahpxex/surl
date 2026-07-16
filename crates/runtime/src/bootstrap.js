@@ -431,6 +431,56 @@
     cloneNode(deep) {
       return wrap(dom.cloneNode(this._id, !!deep));
     }
+    isSameNode(other) {
+      return other === this;
+    }
+    // Next.js 的 head-manager 靠它对比 head 元素;按规范逐层结构比较
+    isEqualNode(other) {
+      if (!other || !(other instanceof Node)) return false;
+      if (other === this) return true;
+      if (other.nodeType !== this.nodeType) return false;
+      switch (this.nodeType) {
+        case 1: {
+          if (
+            this.namespaceURI !== other.namespaceURI ||
+            this.prefix !== other.prefix ||
+            this.localName !== other.localName
+          ) {
+            return false;
+          }
+          const a = this.attributes;
+          const b = other.attributes;
+          if (a.length !== b.length) return false;
+          for (let i = 0; i < a.length; i++) {
+            if (other.getAttribute(a[i].name) !== a[i].value) return false;
+          }
+          break;
+        }
+        case 3:
+        case 8:
+          if (this.nodeValue !== other.nodeValue) return false;
+          break;
+        case 7:
+          if (this.target !== other.target || this.nodeValue !== other.nodeValue) return false;
+          break;
+        case 10:
+          if (
+            this.name !== other.name ||
+            this.publicId !== other.publicId ||
+            this.systemId !== other.systemId
+          ) {
+            return false;
+          }
+          break;
+      }
+      const c1 = this.childNodes;
+      const c2 = other.childNodes;
+      if (c1.length !== c2.length) return false;
+      for (let i = 0; i < c1.length; i++) {
+        if (!c1[i].isEqualNode(c2[i])) return false;
+      }
+      return true;
+    }
     remove() {
       const p = this.parentNode;
       if (p) p.removeChild(this);
@@ -1539,6 +1589,71 @@
   g.Storage = Storage;
   g.localStorage = new Storage();
   g.sessionStorage = new Storage();
+
+  // core-js 的 Promise 可用性检测要求全局有 PromiseRejectionEvent,
+  // 缺了它会把原生 Promise 整个换成慢一个数量级的 polyfill(react.dev 实测)。
+  class PromiseRejectionEvent extends Event {
+    constructor(type, init) {
+      super(type, init);
+      this.promise = (init && init.promise) || null;
+      this.reason = init && init.reason;
+    }
+  }
+  g.PromiseRejectionEvent = PromiseRejectionEvent;
+
+  // React scheduler 的首选调度通道。postMessage 是宏任务:走虚拟时钟。
+  class MessagePort extends EventTarget {
+    constructor() {
+      super();
+      this.onmessage = null;
+      this._other = null;
+    }
+    postMessage(data) {
+      const target = this._other;
+      if (!target) return;
+      g.setTimeout(() => {
+        const ev = new MessageEvent("message");
+        ev.data = data;
+        if (typeof target.onmessage === "function") {
+          try {
+            target.onmessage(ev);
+          } catch (e) {
+            console.error("onmessage error:", e && e.message ? e.message : String(e));
+          }
+        }
+        target.dispatchEvent(ev);
+      }, 0);
+    }
+    start() {}
+    close() {
+      this._other = null;
+    }
+  }
+  class MessageChannel {
+    constructor() {
+      this.port1 = new MessagePort();
+      this.port2 = new MessagePort();
+      this.port1._other = this.port2;
+      this.port2._other = this.port1;
+    }
+  }
+  g.MessagePort = MessagePort;
+  g.MessageChannel = MessageChannel;
+
+  // vuejs.org 等库做 `x instanceof SVGAnimatedString` 特征检查;
+  // 我们的 SVG className 反射的是字符串,这里只要类存在、检查得到 false 即可。
+  g.SVGAnimatedString = class SVGAnimatedString {
+    constructor() {
+      this.baseVal = "";
+      this.animVal = "";
+    }
+  };
+
+  // 刻意不垫 Intl(quickjs-ng 无 ICU)。2026-07-16 在 stripe.com 上实测过
+  // 假 Intl 的后果:格式化输出与 SSR 的 ICU 结果不一致 → React hydration
+  // mismatch(#418/#425)→ 整树卸载,SSR 内容全丢(619 行树变 16 行错误页)。
+  // 没有 Intl 时 react-intl 在初始化即抛错,hydration 根本不启动,
+  // SSR DOM 反而完整保留——对提取结构来说,早崩优于错误地假装会格式化。
 
   g.matchMedia = function (query) {
     return {
