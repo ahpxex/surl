@@ -194,7 +194,9 @@ pub async fn prefetch_graph(
     entries: &[String],
 ) -> (usize, Vec<String>) {
     const MAX_MODULES: usize = 512;
-    const MAX_IN_FLIGHT: usize = 16;
+    // H2 单连接可挂 ~100 个流(reqwest 多路复用),16 太保守;
+    // linear.app(308 chunk)实测 16→64 的收益见 commit message
+    const MAX_IN_FLIGHT: usize = 64;
 
     // (url, is_hint):入口 false,扫描发现的 true
     let mut queue: VecDeque<(String, bool)> =
