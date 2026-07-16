@@ -236,7 +236,10 @@ impl PageRuntime {
     pub fn eval_string(&self, source: &str) -> Result<String, RuntimeError> {
         self.with_deadline(|| {
             self.ctx.with(|ctx| {
-                let result: Result<String, rquickjs::Error> = ctx.eval(source);
+                let mut opts = rquickjs::context::EvalOptions::default();
+                opts.strict = false;
+                let result: Result<String, rquickjs::Error> =
+                    ctx.eval_with_options(source, opts);
                 result
                     .catch(&ctx)
                     .map_err(|caught| caught_to_error(caught, "surl:eval_string"))
@@ -665,7 +668,13 @@ fn eval_caught(
     source: &str,
     label: &str,
 ) -> Result<(), RuntimeError> {
-    let result: Result<(), rquickjs::Error> = ctx.eval::<(), _>(source);
+    // classic script 必须是 sloppy mode:rquickjs 默认 strict,会把
+    // `RLCONF = {...}` 这类隐式全局赋值(wikipedia/Next.js/SvelteKit 的
+    // 引导脚本全靠它)变成 ReferenceError,引发整页级联失败。
+    let mut opts = rquickjs::context::EvalOptions::default();
+    opts.strict = false;
+    opts.filename = Some(label.into());
+    let result: Result<(), rquickjs::Error> = ctx.eval_with_options(source, opts);
     result
         .catch(ctx)
         .map_err(|caught| caught_to_error(caught, label))
