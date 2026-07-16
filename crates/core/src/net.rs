@@ -10,12 +10,19 @@ pub struct ReqwestClient {
     client: reqwest::Client,
 }
 
+/// 所有出网请求共用的 client 配置。reqwest 默认完全无超时,而 settledness
+/// 要等所有挂起请求——一个不返回的长连接就能把 settle 拖到永远,超时是兜底。
+pub(crate) fn client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .user_agent(concat!("surl/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+}
+
 impl ReqwestClient {
     pub fn new() -> Result<Self, reqwest::Error> {
         Ok(ReqwestClient {
-            client: reqwest::Client::builder()
-                .user_agent(concat!("surl/", env!("CARGO_PKG_VERSION")))
-                .build()?,
+            client: client_builder().build()?,
         })
     }
 }

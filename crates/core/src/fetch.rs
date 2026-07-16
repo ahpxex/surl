@@ -20,9 +20,7 @@ pub struct FetchResult {
 /// 抓取单个 URL,跟随重定向,自动解压。
 pub async fn fetch(input: &str) -> Result<FetchResult, FetchError> {
     let url = url::Url::parse(input)?;
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("surl/", env!("CARGO_PKG_VERSION")))
-        .build()?;
+    let client = crate::net::client_builder().build()?;
     let resp = client.get(url).send().await?;
 
     let final_url = resp.url().clone();
