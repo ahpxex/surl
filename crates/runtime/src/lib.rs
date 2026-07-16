@@ -226,10 +226,12 @@ impl PageRuntime {
 
     /// 执行一段经典 script(非 module)。异常转成 `RuntimeError::Js`。
     pub fn eval(&self, source: &str) -> Result<(), RuntimeError> {
-        self.with_deadline(|| {
-            self.ctx
-                .with(|ctx| eval_caught(&ctx, source, "surl:script"))
-        })
+        self.eval_labeled(source, "surl:script")
+    }
+
+    /// 同 [`Self::eval`],label 作为引擎侧文件名进栈帧(排障时能看出是哪个脚本)。
+    fn eval_labeled(&self, source: &str, label: &str) -> Result<(), RuntimeError> {
+        self.with_deadline(|| self.ctx.with(|ctx| eval_caught(&ctx, source, label)))
     }
 
     /// 求值一个表达式,结果转成 String 带回(测试与诊断用)。
@@ -278,7 +280,7 @@ impl PageRuntime {
             match script {
                 Script::Inline(node, source) => {
                     self.set_current_script(Some(node));
-                    self.eval_page_script(&source, &mut report);
+                    self.eval_page_script(&source, "surl:inline-script", &mut report);
                     self.set_current_script(None);
                 }
                 Script::External(_, src) => {
@@ -312,47 +314,69 @@ impl PageRuntime {
             let doc = self.dom.borrow();
             collect_scripts(&doc)
         };
+        // 外链 classic script 先并发取回(浏览器的 preload 语义):
+        // 执行必须按文档序阻塞,但网络往返没必要串行排队。
+        let prefetched: std::collections::HashMap<String, HttpResult> = {
+            let mut in_flight: FuturesUnordered<_> = scripts
+                .iter()
+                .filter_map(|s| match s {
+                    Script::External(_, src) => Some(self.resolve_url(src)),
+                    _ => None,
+                })
+                .map(|url| async move {
+                    let request = HttpRequest {
+                        url: url.clone(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                    };
+                    let result = net.fetch(request).await;
+                    (url, result)
+                })
+                .collect();
+            let mut map = std::collections::HashMap::new();
+            while let Some((url, result)) = in_flight.next().await {
+                map.insert(url, result);
+            }
+            map
+        };
         // 第一遍:classic script(同步阻塞语义,文档序)
         let mut module_scripts: Vec<Script> = Vec::new();
         for script in scripts {
             match script {
                 Script::Inline(node, source) => {
                     self.set_current_script(Some(node));
-                    self.eval_page_script(&source, &mut report.scripts);
+                    self.eval_page_script(&source, "surl:inline-script", &mut report.scripts);
                     self.set_current_script(None);
                 }
                 Script::External(node, src) => {
-                    // classic 外链脚本是阻塞语义:取回来立刻按序执行
                     let resolved = self.resolve_url(&src);
-                    let request = HttpRequest {
-                        url: resolved.clone(),
-                        method: "GET".into(),
-                        headers: Vec::new(),
-                        body: None,
-                    };
-                    match net.fetch(request).await {
-                        Ok(resp) if (200..300).contains(&resp.status) => {
+                    // get 不 remove:同 URL 的多个 script 元素各执行一次(浏览器语义)
+                    match prefetched.get(&resolved) {
+                        Some(Ok(resp)) if (200..300).contains(&resp.status) => {
                             let source = String::from_utf8_lossy(&resp.body).into_owned();
                             self.set_current_script(Some(node));
-                            self.eval_page_script(&source, &mut report.scripts);
+                            self.eval_page_script(&source, &resolved, &mut report.scripts);
                             self.set_current_script(None);
                         }
-                        Ok(resp) => {
+                        Some(Ok(resp)) => {
                             let msg = format!("script {resolved}: HTTP {}", resp.status);
                             tracing::warn!(target: "surl_js", "{msg}");
                             report.scripts.errors.push(msg);
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                             let msg = format!("script {resolved}: {e}");
                             tracing::warn!(target: "surl_js", "{msg}");
                             report.scripts.errors.push(msg);
                         }
+                        None => unreachable!("every external script src was prefetched"),
                     }
                     self.pump_jobs()?;
                 }
                 module @ Script::Module { .. } => module_scripts.push(module),
             }
         }
+        drop(prefetched);
 
         // 第二遍:module script(defer 语义——classic 全部跑完后执行)
         if !module_scripts.is_empty() {
@@ -607,8 +631,8 @@ impl PageRuntime {
         })
     }
 
-    fn eval_page_script(&self, source: &str, report: &mut ScriptReport) {
-        match self.eval(source) {
+    fn eval_page_script(&self, source: &str, label: &str, report: &mut ScriptReport) {
+        match self.eval_labeled(source, label) {
             Ok(()) => report.executed += 1,
             Err(e) => {
                 // 浏览器语义:单个脚本抛错不中止页面

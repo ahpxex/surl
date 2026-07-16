@@ -1430,6 +1430,85 @@
     },
   });
 
+  // ---- 动态插入的 <script>:webpack/Next.js 的 chunk 加载全靠它 ----
+  // 浏览器语义:插入即执行。内联同步执行;外链经事件循环取回后执行,
+  // 执行完派发 load(取回失败才是 error;执行抛错仍算 load)。
+  // 限制:只看直接插入的 script 元素;随祖先子树整体连入的不追踪。
+  function hostFetchText(url) {
+    return new Promise((resolve, reject) => {
+      const id = dom.fetchStart(url, "GET", [], false, "");
+      pendingFetches.set(id, { resolve, reject, url });
+    }).then((resp) => {
+      if (!resp.ok) throw new TypeError("script HTTP " + resp.status);
+      return resp.text();
+    });
+  }
+  function fireScriptEvent(node, type) {
+    const ev = new Event(type);
+    const handler = node["on" + type];
+    if (typeof handler === "function") {
+      try {
+        handler.call(node, ev);
+      } catch (e) {
+        console.error("script on" + type + " error:", e && e.message ? e.message : String(e));
+      }
+    }
+    node.dispatchEvent(ev);
+  }
+  const JS_MIME = /^(?:text\/javascript|application\/(?:x-)?javascript|text\/ecmascript)$/i;
+  function maybeRunInsertedScript(node) {
+    if (!node || node.nodeType !== 1 || node.localName !== "script") return;
+    // already-started 旗标:一个 script 至多执行一次(含被移动的情况)
+    if (node.__surlScriptStarted || !node.isConnected) return;
+    node.__surlScriptStarted = true;
+    const type = (node.getAttribute("type") || "").trim();
+    const src = node.getAttribute("src");
+    let url = null;
+    if (src != null && src !== "") {
+      try {
+        url = new URL(src, g.location.href || undefined).href;
+      } catch (e) {
+        fireScriptEvent(node, "error");
+        return;
+      }
+    }
+    if (/^module$/i.test(type)) {
+      if (!url) return; // 动态内联 module:暂不支持
+      import(url).then(
+        () => fireScriptEvent(node, "load"),
+        (e) => {
+          console.error("dynamic module script error:", e && e.message ? e.message : String(e));
+          fireScriptEvent(node, "error");
+        },
+      );
+      return;
+    }
+    if (type && !JS_MIME.test(type)) return; // JSON/模板等数据块不执行
+    if (url) {
+      hostFetchText(url).then(
+        (source) => {
+          try {
+            // 间接 eval:全局作用域 + sloppy mode,等价 classic script
+            (0, eval)(source + "\n//# sourceURL=" + url);
+          } catch (e) {
+            console.error("dynamic script error:", e && e.message ? e.message : String(e));
+          }
+          fireScriptEvent(node, "load");
+        },
+        (e) => {
+          console.error("dynamic script fetch error:", e && e.message ? e.message : String(e));
+          fireScriptEvent(node, "error");
+        },
+      );
+    } else {
+      try {
+        (0, eval)((node.textContent || "") + "\n//# sourceURL=surl:dynamic-inline");
+      } catch (e) {
+        console.error("dynamic inline script error:", e && e.message ? e.message : String(e));
+      }
+    }
+  }
+
   // ---- 环境垫片:真实 bundle(React/Vite/路由/UI 库)会摸的 Web API ----
   // 原则:能不崩、返回中性值;不假装有像素。
 
@@ -1646,6 +1725,7 @@
     const prev = this.lastChild;
     const result = rawAppendChild.call(this, child);
     notifyChildList(this, child instanceof DocumentFragment ? [] : [child], [], prev, null);
+    maybeRunInsertedScript(child);
     return result;
   };
   const rawInsertBefore = Node.prototype.insertBefore;
@@ -1659,6 +1739,7 @@
       node.previousSibling,
       reference || null,
     );
+    maybeRunInsertedScript(node);
     return result;
   };
   const rawRemoveChild = Node.prototype.removeChild;
