@@ -11,6 +11,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::module::{Declared, Module};
 use rquickjs::{Ctx, Error, Result};
@@ -178,37 +179,54 @@ fn read_string_literal(s: &str) -> Option<String> {
 }
 
 /// 从入口出发预取整张模块图进缓存。返回 (加载数, 错误列表)。
+///
+/// 图是边下载边发现的,但已知节点必须并发拉取:墙钟 ≈ 依赖深度 × RTT,
+/// 而不是模块总数 × RTT(linear.app 有 308 个 chunk,串行时每次跑要 70s+)。
 pub async fn prefetch_graph(
     net: &dyn HttpClient,
     sources: &SourceCache,
     entries: &[String],
 ) -> (usize, Vec<String>) {
     const MAX_MODULES: usize = 512;
+    const MAX_IN_FLIGHT: usize = 16;
+
     let mut queue: VecDeque<String> = entries.iter().cloned().collect();
     let mut seen: HashSet<String> = queue.iter().cloned().collect();
+    let mut scheduled = 0usize;
+    let mut capped = false;
     let mut loaded = 0;
     let mut errors = Vec::new();
+    let mut in_flight = FuturesUnordered::new();
 
-    while let Some(url) = queue.pop_front() {
-        if sources.borrow().contains_key(&url) {
-            continue;
+    loop {
+        while !capped && in_flight.len() < MAX_IN_FLIGHT {
+            let Some(url) = queue.pop_front() else { break };
+            if sources.borrow().contains_key(&url) {
+                continue;
+            }
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                // data:/blob: 等——目前不支持,记录跳过
+                errors.push(format!("unsupported module scheme: {url}"));
+                continue;
+            }
+            if scheduled >= MAX_MODULES {
+                errors.push(format!("module graph exceeds {MAX_MODULES} modules, stopping"));
+                capped = true;
+                break;
+            }
+            scheduled += 1;
+            let req = HttpRequest {
+                url: url.clone(),
+                method: "GET".into(),
+                headers: Vec::new(),
+                body: None,
+            };
+            in_flight.push(async move { (url, net.fetch(req).await) });
         }
-        if loaded >= MAX_MODULES {
-            errors.push(format!("module graph exceeds {MAX_MODULES} modules, stopping"));
+        let Some((url, result)) = in_flight.next().await else {
             break;
-        }
-        if !(url.starts_with("http://") || url.starts_with("https://")) {
-            // data:/blob: 等——目前不支持,记录跳过
-            errors.push(format!("unsupported module scheme: {url}"));
-            continue;
-        }
-        let req = HttpRequest {
-            url: url.clone(),
-            method: "GET".into(),
-            headers: Vec::new(),
-            body: None,
         };
-        match net.fetch(req).await {
+        match result {
             Ok(resp) if (200..300).contains(&resp.status) => {
                 let source = String::from_utf8_lossy(&resp.body).into_owned();
                 for spec in scan_specifiers(&source) {
@@ -231,6 +249,75 @@ pub async fn prefetch_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::cell::Cell;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Poll, Waker};
+
+    use crate::net::{HttpClient, HttpResponse, HttpResult};
+
+    /// 到齐 `threshold` 个在飞请求前谁都不放行的 client:
+    /// 串行实现第一个请求就永久挂起(测试超时),并发实现一轮就绪。
+    /// 把「预取必须并发」从性能观感变成确定性断言。
+    struct BarrierClient {
+        started: Cell<usize>,
+        wakers: RefCell<Vec<Waker>>,
+        threshold: usize,
+    }
+
+    impl HttpClient for BarrierClient {
+        fn fetch<'a>(&'a self, req: HttpRequest) -> Pin<Box<dyn Future<Output = HttpResult> + 'a>> {
+            Box::pin(async move {
+                let mut registered = false;
+                std::future::poll_fn(|cx| {
+                    if !registered {
+                        registered = true;
+                        self.started.set(self.started.get() + 1);
+                    }
+                    if self.started.get() >= self.threshold {
+                        for w in self.wakers.borrow_mut().drain(..) {
+                            w.wake();
+                        }
+                        Poll::Ready(())
+                    } else {
+                        self.wakers.borrow_mut().push(cx.waker().clone());
+                        Poll::Pending
+                    }
+                })
+                .await;
+                Ok(HttpResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    url: req.url,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn prefetch_fetches_known_nodes_concurrently() {
+        let client = BarrierClient {
+            started: Cell::new(0),
+            wakers: RefCell::new(Vec::new()),
+            threshold: 2,
+        };
+        let sources: SourceCache = Rc::new(RefCell::new(HashMap::new()));
+        let entries = vec![
+            "https://t.test/a.js".to_string(),
+            "https://t.test/b.js".to_string(),
+        ];
+        let (loaded, errors) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            prefetch_graph(&client, &sources, &entries),
+        )
+        .await
+        .expect("prefetch deadlocked the barrier: known graph nodes must be fetched concurrently");
+        assert_eq!(loaded, 2);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
 
     #[test]
     fn scans_static_dynamic_and_reexport() {
