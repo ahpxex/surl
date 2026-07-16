@@ -40,9 +40,11 @@ impl Resolver for UrlResolver {
 }
 
 /// `base` 是导入方模块名(绝对 URL);`name` 是 import 的说明符。
+/// 只认 http(s):`node:fs` 这类说明符是 bundler 产物里嵌的代码示例字符串
+/// 被扫描器误捞的(tanstack.com 实测),不该变成警告噪音。
 pub fn resolve_specifier(base: &str, name: &str) -> Option<String> {
     if let Ok(abs) = url::Url::parse(name) {
-        return Some(abs.to_string());
+        return matches!(abs.scheme(), "http" | "https").then(|| abs.to_string());
     }
     // 相对形式必须以 ./ ../ / 开头;其余是裸说明符,拒绝
     if !(name.starts_with("./") || name.starts_with("../") || name.starts_with('/')) {
@@ -182,6 +184,10 @@ fn read_string_literal(s: &str) -> Option<String> {
 ///
 /// 图是边下载边发现的,但已知节点必须并发拉取:墙钟 ≈ 依赖深度 × RTT,
 /// 而不是模块总数 × RTT(linear.app 有 308 个 chunk,串行时每次跑要 70s+)。
+///
+/// 错误分级:入口(script 标签明确引用)失败是错误;扫描发现的 hint
+/// 失败只记 debug——扫描器是文本近似,bundle 里嵌的代码示例字符串会
+/// 被捞成不存在的 URL(tanstack.com 一页 40+ 个 404 hint),不是页面的错。
 pub async fn prefetch_graph(
     net: &dyn HttpClient,
     sources: &SourceCache,
@@ -190,23 +196,35 @@ pub async fn prefetch_graph(
     const MAX_MODULES: usize = 512;
     const MAX_IN_FLIGHT: usize = 16;
 
-    let mut queue: VecDeque<String> = entries.iter().cloned().collect();
-    let mut seen: HashSet<String> = queue.iter().cloned().collect();
+    // (url, is_hint):入口 false,扫描发现的 true
+    let mut queue: VecDeque<(String, bool)> =
+        entries.iter().map(|u| (u.clone(), false)).collect();
+    let mut seen: HashSet<String> = entries.iter().cloned().collect();
     let mut scheduled = 0usize;
     let mut capped = false;
     let mut loaded = 0;
     let mut errors = Vec::new();
     let mut in_flight = FuturesUnordered::new();
 
+    let report_failure = |is_hint: bool, msg: String, errors: &mut Vec<String>| {
+        if is_hint {
+            tracing::debug!(target: "surl_js", "prefetch hint failed: {msg}");
+        } else {
+            errors.push(msg);
+        }
+    };
+
     loop {
         while !capped && in_flight.len() < MAX_IN_FLIGHT {
-            let Some(url) = queue.pop_front() else { break };
+            let Some((url, is_hint)) = queue.pop_front() else {
+                break;
+            };
             if sources.borrow().contains_key(&url) {
                 continue;
             }
             if !(url.starts_with("http://") || url.starts_with("https://")) {
                 // data:/blob: 等——目前不支持,记录跳过
-                errors.push(format!("unsupported module scheme: {url}"));
+                report_failure(is_hint, format!("unsupported module scheme: {url}"), &mut errors);
                 continue;
             }
             if scheduled >= MAX_MODULES {
@@ -221,9 +239,9 @@ pub async fn prefetch_graph(
                 headers: Vec::new(),
                 body: None,
             };
-            in_flight.push(async move { (url, net.fetch(req).await) });
+            in_flight.push(async move { (url, is_hint, net.fetch(req).await) });
         }
-        let Some((url, result)) = in_flight.next().await else {
+        let Some((url, is_hint, result)) = in_flight.next().await else {
             break;
         };
         match result {
@@ -233,14 +251,16 @@ pub async fn prefetch_graph(
                     if let Some(abs) = resolve_specifier(&url, &spec)
                         && seen.insert(abs.clone())
                     {
-                        queue.push_back(abs);
+                        queue.push_back((abs, true));
                     }
                 }
                 sources.borrow_mut().insert(url, source);
                 loaded += 1;
             }
-            Ok(resp) => errors.push(format!("module {url}: HTTP {}", resp.status)),
-            Err(e) => errors.push(format!("module {url}: {e}")),
+            Ok(resp) => {
+                report_failure(is_hint, format!("module {url}: HTTP {}", resp.status), &mut errors)
+            }
+            Err(e) => report_failure(is_hint, format!("module {url}: {e}"), &mut errors),
         }
     }
     (loaded, errors)
