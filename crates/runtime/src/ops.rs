@@ -452,6 +452,95 @@ pub fn install(
     {
         let dom = dom.clone();
         op!(
+            "getAttributeNS",
+            move |ctx: Ctx<'_>, id: f64, ns: String, local: String| -> Result<Option<String>> {
+                let doc = dom.borrow();
+                let id = nid(&ctx, &doc, id)?;
+                Ok(doc.element(id).and_then(|el| {
+                    el.attrs
+                        .iter()
+                        .find(|a| *a.name.ns == ns && *a.name.local == *local)
+                        .map(|a| a.value.clone())
+                }))
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "setAttributeNS",
+            move |ctx: Ctx<'_>,
+                  id: f64,
+                  ns: String,
+                  prefix: String,
+                  local: String,
+                  value: String|
+                  -> Result<()> {
+                let mut doc = dom.borrow_mut();
+                let id = nid(&ctx, &doc, id)?;
+                let Some(el) = doc.element_mut(id) else {
+                    return Err(Exception::throw_type(&ctx, "setAttributeNS on non-element"));
+                };
+                // 规范:按 (namespace, localName) 匹配既有属性,保留其前缀
+                if let Some(attr) = el
+                    .attrs
+                    .iter_mut()
+                    .find(|a| *a.name.ns == ns && *a.name.local == *local)
+                {
+                    attr.value = value;
+                } else {
+                    let prefix = (!prefix.is_empty()).then(|| html5ever_prefix(&prefix));
+                    el.attrs.push(surl_dom::Attr {
+                        name: QualName::new(
+                            prefix,
+                            surl_dom::Namespace::from(ns),
+                            LocalName::from(local),
+                        ),
+                        value,
+                    });
+                }
+                Ok(())
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "removeAttributeNS",
+            move |ctx: Ctx<'_>, id: f64, ns: String, local: String| -> Result<()> {
+                let mut doc = dom.borrow_mut();
+                let id = nid(&ctx, &doc, id)?;
+                if let Some(el) = doc.element_mut(id) {
+                    el.attrs
+                        .retain(|a| !(*a.name.ns == ns && *a.name.local == *local));
+                }
+                Ok(())
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
+            "getElementsByTagNameNS",
+            move |ctx: Ctx<'_>, root: f64, ns: String, local: String| -> Result<Vec<f64>> {
+                let doc = dom.borrow();
+                let root = nid(&ctx, &doc, root)?;
+                Ok(doc
+                    .descendants(root)
+                    .filter(|&n| {
+                        doc.element(n).is_some_and(|el| {
+                            (ns == "*" || *el.name.ns == ns)
+                                && (local == "*" || *el.name.local == *local)
+                        })
+                    })
+                    .map(fid)
+                    .collect())
+            }
+        );
+    }
+    {
+        let dom = dom.clone();
+        op!(
             "getAttribute",
             move |ctx: Ctx<'_>, id: f64, name: String| -> Result<Option<String>> {
                 let doc = dom.borrow();

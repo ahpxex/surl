@@ -194,7 +194,8 @@
       this._immediateStopped = true;
     }
     preventDefault() {
-      if (this.cancelable) this._canceled = true;
+      // 被动监听器里 preventDefault 是空操作(规范)
+      if (this.cancelable && !this._inPassiveListener) this._canceled = true;
     }
     // 传统 API(规范仍要求)
     get cancelBubble() {
@@ -348,12 +349,25 @@
       if (typeof callback !== "function") return;
       const capture = typeof options === "boolean" ? options : !!(options && options.capture);
       const once = !!(options && options.once);
-      const list = this._ensureListeners();
       const key = String(type);
+      // 规范:touch/wheel 系在 window/document/body 上默认被动
+      let passive =
+        options && typeof options === "object" && options.passive !== undefined
+          ? !!options.passive
+          : null;
+      if (passive === null) {
+        passive =
+          ["touchstart", "touchmove", "wheel", "mousewheel"].includes(key) &&
+          (this === g ||
+            this === g.document ||
+            this === g.document.documentElement ||
+            this === g.document.body);
+      }
+      const list = this._ensureListeners();
       if (!list.has(key)) list.set(key, []);
       const entries = list.get(key);
       if (entries.some((e) => e.callback === callback && e.capture === capture)) return;
-      entries.push({ callback, capture, once });
+      entries.push({ callback, capture, once, passive });
     }
     removeEventListener(type, callback, options) {
       const capture = typeof options === "boolean" ? options : !!(options && options.capture);
@@ -372,10 +386,13 @@
         if (phase === 1 && !entry.capture) continue;
         if (phase === 3 && entry.capture) continue;
         if (entry.once) this.removeEventListener(event.type, entry.callback, entry.capture);
+        if (entry.passive) event._inPassiveListener = true;
         try {
           entry.callback.call(this, event);
         } catch (e) {
           console.error("uncaught listener error:", e && e.message ? e.message : String(e));
+        } finally {
+          event._inPassiveListener = false;
         }
       }
     }
@@ -632,17 +649,26 @@
     lookupNamespaceURI(prefix) {
       if (prefix === "" || prefix === undefined) prefix = null;
       else if (prefix !== null) prefix = String(prefix);
-      if (prefix === "xml") return "http://www.w3.org/XML/1998/namespace";
-      if (prefix === "xmlns") return "http://www.w3.org/2000/xmlns/";
       let el = null;
       if (this.nodeType === 1) el = this;
       else if (this.nodeType === 9) el = this.documentElement;
       else if (this.nodeType === 10 || this.nodeType === 11) return null;
       else el = this.parentElement;
+      if (el === null) return null;
+      // 快捷前缀只在有元素语境时生效(无根文档返回 null,WPT 钉死)
+      if (prefix === "xml") return "http://www.w3.org/XML/1998/namespace";
+      if (prefix === "xmlns") return "http://www.w3.org/2000/xmlns/";
       for (; el; el = el.parentElement) {
         if (el.namespaceURI && el.prefix === prefix) return el.namespaceURI;
+        // xmlns 属性可能以普通属性(解析器)或 xmlns 命名空间(setAttributeNS)存在
         const attr = prefix === null ? "xmlns" : "xmlns:" + prefix;
-        const v = el.getAttribute(attr);
+        let v = el.getAttribute(attr);
+        if (v === null) {
+          v = el.getAttributeNS(
+            "http://www.w3.org/2000/xmlns/",
+            prefix === null ? "xmlns" : prefix,
+          );
+        }
         if (v !== null) return v === "" ? null : v;
       }
       return null;
@@ -658,8 +684,11 @@
       for (; el; el = el.parentElement) {
         if (el.namespaceURI === namespace && el.prefix !== null) return el.prefix;
         for (const a of el.attributes) {
-          if (a.name.startsWith("xmlns:") && a.value === namespace) {
-            return a.name.slice(6);
+          if (a.value !== namespace) continue;
+          if (a.name.startsWith("xmlns:")) return a.name.slice(6);
+          // setAttributeNS 存的 xmlns:xxx:name 是 localName,前缀在 QualName 里
+          if (a.prefix === "xmlns" || (a.namespaceURI === "http://www.w3.org/2000/xmlns/" && a.localName !== "xmlns")) {
+            return a.localName;
           }
         }
       }
@@ -995,6 +1024,35 @@
     }
     hasAttributes() {
       return this.attributes.length > 0;
+    }
+    getAttributeNS(ns, local) {
+      const v = dom.getAttributeNS(
+        this._id,
+        ns == null ? "" : String(ns),
+        String(local),
+      );
+      return v == null ? null : v;
+    }
+    setAttributeNS(ns, qualifiedName, value) {
+      const v = validateAndExtract(ns, String(qualifiedName), validElementLocalName);
+      dom.setAttributeNS(
+        this._id,
+        v.namespace === null ? "" : v.namespace,
+        v.prefix === null ? "" : v.prefix,
+        v.localName,
+        String(value),
+      );
+    }
+    removeAttributeNS(ns, local) {
+      dom.removeAttributeNS(this._id, ns == null ? "" : String(ns), String(local));
+    }
+    hasAttributeNS(ns, local) {
+      return this.getAttributeNS(ns, local) !== null;
+    }
+    getElementsByTagNameNS(ns, local) {
+      return dom
+        .getElementsByTagNameNS(this._id, ns == null ? "" : String(ns), String(local))
+        .map(wrap);
     }
     getAttributeNames() {
       const out = [];
@@ -1386,6 +1444,11 @@
     }
     querySelectorAll(sel) {
       return dom.querySelectorAll(this._id, String(sel)).map(wrap);
+    }
+    getElementsByTagNameNS(ns, local) {
+      return this.documentElement
+        ? this.documentElement.getElementsByTagNameNS(ns, local)
+        : [];
     }
     getElementsByTagName(tag) {
       return this.documentElement ? this.documentElement.getElementsByTagName(tag) : [];
@@ -2223,6 +2286,42 @@
       );
     }
     ceReactAttr(this, key, oldValue, String(value));
+  };
+  const rawSetAttributeNS = Element.prototype.setAttributeNS;
+  Element.prototype.setAttributeNS = function (ns, qualifiedName, value) {
+    const qn = String(qualifiedName);
+    const idx = qn.indexOf(":");
+    const local = idx === -1 ? qn : qn.slice(idx + 1);
+    const nsStr = ns == null || ns === "" ? null : String(ns);
+    const oldValue = this.getAttributeNS(nsStr, local);
+    rawSetAttributeNS.call(this, ns, qualifiedName, value);
+    if (activeMutationObservers.size) {
+      notifyMutation(
+        makeMutationRecord("attributes", this, {
+          attributeName: local,
+          attributeNamespace: nsStr,
+          oldValue,
+        }),
+      );
+    }
+    ceReactAttr(this, local, oldValue, String(value));
+  };
+  const rawRemoveAttributeNS = Element.prototype.removeAttributeNS;
+  Element.prototype.removeAttributeNS = function (ns, local) {
+    const nsStr = ns == null || ns === "" ? null : String(ns);
+    const localStr = String(local);
+    const oldValue = this.getAttributeNS(nsStr, localStr);
+    rawRemoveAttributeNS.call(this, ns, local);
+    if (activeMutationObservers.size && oldValue !== null) {
+      notifyMutation(
+        makeMutationRecord("attributes", this, {
+          attributeName: localStr,
+          attributeNamespace: nsStr,
+          oldValue,
+        }),
+      );
+    }
+    if (oldValue !== null) ceReactAttr(this, localStr, oldValue, null);
   };
   const rawRemoveAttribute = Element.prototype.removeAttribute;
   Element.prototype.removeAttribute = function (attrName) {
