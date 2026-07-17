@@ -132,7 +132,7 @@ surl cookies chrome --domain github.com   # Netscape format, curl/yt-dlp compati
 surl storage chrome https://github.com    # localStorage dump for one origin
 ```
 
-⚠️ Both print live session tokens in plaintext. Treat the output like a
+Both print live session tokens in plaintext. Treat the output like a
 password.
 
 ## How it works
@@ -187,10 +187,11 @@ Structure only, on purpose:
 
 ## Status
 
-M0–M4 are complete (semantic tree → embedded JS + DOM bindings → fetch bridge +
-settledness → ESM + React hydration → WPT/corpus regression as routine). M5 is
-in progress: structural diff has landed; content-addressed snapshot storage
-(`surl <url> @yesterday`), watch mode, and an exposed virtual clock are next.
+The core pipeline works end to end: real SPAs — React, Vue, Svelte, Lit,
+Next — hydrate in the runtime, and everything documented above is implemented,
+including structural diff and browser session import. Planned next:
+content-addressed snapshot storage (`surl <url> @yesterday`), a watch mode,
+and exposing the virtual clock as a CLI flag.
 
 ## License
 
