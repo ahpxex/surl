@@ -62,3 +62,47 @@ async fn readaware_renders_offline() {
     };
     assert_eq!(tree, tree2, "rendering must be deterministic");
 }
+
+/// 框架脚手架语料:官方脚手架的生产构建产物冻结在 corpus/frameworks/,
+/// 离线跑完整管线。每个夹具 ≈ 覆盖一个框架生态的行为模式——
+/// 「XX 框架需要什么 API」不靠人工整理清单,靠这里的红绿灯。
+/// vite 系模板是纯 CSR:index.html 里只有空挂载点,树里出现内容
+/// 本身就证明渲染管线跑通;lit 夹具同时验收 custom elements 升级
+/// 与光合并 Shadow DOM。
+#[tokio::test]
+async fn framework_fixtures_render_offline() {
+    let cases: &[(&str, &[&str])] = &[
+        ("vite-react", &["Count is 0"]),
+        ("vite-vue", &["src/App.vue", "Count is 0"]),
+        ("vite-svelte", &["src/App.svelte", "Count is 0"]),
+        ("vite-lit", &["src/my-element.js", "Count is 0"]),
+        ("next", &["To get started, edit the page.js file."]),
+    ];
+    for (name, markers) in cases {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/corpus/frameworks")
+            .join(name);
+        let html = std::fs::read_to_string(root.join("index.html"))
+            .unwrap_or_else(|e| panic!("{name}: read index.html: {e}"));
+        let origin = format!("https://{name}.fixture");
+        let net = FsHttpClient {
+            root,
+            origin: origin.clone(),
+        };
+        let base = url::Url::parse(&format!("{origin}/")).unwrap();
+        let rt = PageRuntime::with_base(parse_html(&html), Some(base.clone())).unwrap();
+        let report = rt.load(&net, SettleOptions::default()).await.unwrap();
+        assert!(
+            report.modules.errors.is_empty(),
+            "{name}: module errors: {:?}",
+            report.modules.errors
+        );
+        let tree = {
+            let doc = rt.document();
+            surl_core::semantic::extract(&doc, Some(&base)).to_tree_string()
+        };
+        for marker in *markers {
+            assert!(tree.contains(marker), "{name}: `{marker}` missing:\n{tree}");
+        }
+    }
+}
