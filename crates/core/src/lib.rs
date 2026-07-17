@@ -4,6 +4,7 @@
 //! 分层:fetch(HTTP)→ dom(html5ever 树,见 surl-dom)→ runtime(QuickJS +
 //! Web API,M1)→ 事件循环跑到静止(M2)→ semantic(语义树 IR)。
 
+pub mod cookies;
 pub mod fetch;
 pub mod markdown;
 pub mod net;

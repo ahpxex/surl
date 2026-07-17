@@ -36,6 +36,11 @@ struct Args {
     /// 一行运行统计到 stderr(各阶段耗时/请求数/错误数)
     #[arg(long)]
     stats: bool,
+
+    /// 从本机浏览器导入登录态(cookies):chrome/firefox/safari/brave/edge/arc/…
+    /// 或 any 自动探测。只取目标站相关 cookies。macOS Chrome 首次会弹钥匙串授权。
+    #[arg(long, value_name = "BROWSER")]
+    cookies_from_browser: Option<String>,
 }
 
 #[derive(clap::Subcommand)]
@@ -50,6 +55,16 @@ enum Command {
         #[arg(long)]
         no_js: bool,
     },
+
+    /// 从浏览器导出 cookies(Netscape 格式,curl/yt-dlp 通用),排障与复用用。
+    /// 注意:输出含明文 session token,与密码同等敏感。
+    Cookies {
+        /// 浏览器:chrome/firefox/safari/brave/edge/arc/chromium/vivaldi/opera/any
+        browser: String,
+        /// 只导出该域(含子域)的 cookies
+        #[arg(long)]
+        domain: Option<String>,
+    },
 }
 
 // PageRuntime 是单线程世界(Rc + JS 引擎),整个程序跑 current_thread;
@@ -62,25 +77,54 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    if let Some(Command::Diff { a, b, no_js }) = args.command {
-        let sa = snapshot_for(&a, no_js).await?;
-        let sb = snapshot_for(&b, no_js).await?;
-        let changes = surl_core::semantic::diff::diff(&sa, &sb);
-        print!("{}", surl_core::semantic::diff::to_text(&changes));
-        std::process::exit(if changes.is_empty() { 0 } else { 1 });
+    match args.command {
+        Some(Command::Diff { a, b, no_js }) => {
+            let sa = snapshot_for(&a, no_js).await?;
+            let sb = snapshot_for(&b, no_js).await?;
+            let changes = surl_core::semantic::diff::diff(&sa, &sb);
+            print!("{}", surl_core::semantic::diff::to_text(&changes));
+            std::process::exit(if changes.is_empty() { 0 } else { 1 });
+        }
+        Some(Command::Cookies { browser, domain }) => {
+            let cookies = surl_core::cookies::browser_cookies(&browser, domain.as_deref())?;
+            eprintln!("surl: {} cookies from {browser}", cookies.len());
+            print!("{}", surl_core::cookies::to_netscape(&cookies));
+            return Ok(());
+        }
+        None => {}
     }
     let Some(input) = args.input.as_deref() else {
         anyhow::bail!("missing input (URL / file / `-`); see --help");
     };
+
+    // 登录态:按目标 URL 的域取 cookies,建一个所有出网请求共用的 jar
+    let jar = match &args.cookies_from_browser {
+        Some(browser) => match url::Url::parse(input) {
+            Ok(url) => {
+                let (jar, n) = surl_core::cookies::jar_for_url(browser, &url)?;
+                eprintln!(
+                    "surl: loaded {n} cookies from {browser} for {}",
+                    url.host_str().unwrap_or("?")
+                );
+                Some(jar)
+            }
+            Err(_) => {
+                eprintln!("surl: --cookies-from-browser 仅对 URL 生效,已忽略");
+                None
+            }
+        },
+        None => None,
+    };
+
     let doc_start = std::time::Instant::now();
-    let (html, base) = load(input).await?;
+    let (html, base) = load(input, jar.clone()).await?;
     let doc_ms = doc_start.elapsed().as_millis();
     let doc_bytes = html.len();
 
     let mut doc = surl_dom::parse_html(&html);
     if !args.no_js {
         let rt = surl_runtime::PageRuntime::with_base(doc, base.clone())?;
-        let net = surl_core::net::ReqwestClient::new()?;
+        let net = make_client(jar.clone())?;
         let report = rt
             .load(&net, surl_runtime::SettleOptions::default())
             .await?;
@@ -157,13 +201,23 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// jar 有则带登录态,无则普通 client。
+fn make_client(
+    jar: Option<surl_core::cookies::CookieJar>,
+) -> anyhow::Result<surl_core::net::ReqwestClient> {
+    Ok(match jar {
+        Some(jar) => surl_core::net::ReqwestClient::with_cookies(jar)?,
+        None => surl_core::net::ReqwestClient::new()?,
+    })
+}
+
 /// diff 的一侧:.json 直接读快照,其余走完整渲染管线。
 async fn snapshot_for(input: &str, no_js: bool) -> anyhow::Result<surl_core::semantic::Snapshot> {
     if input.ends_with(".json") && std::path::Path::new(input).exists() {
         let raw = std::fs::read_to_string(input).with_context(|| format!("read {input}"))?;
         return serde_json::from_str(&raw).context("parse snapshot JSON");
     }
-    let (html, base) = load(input).await?;
+    let (html, base) = load(input, None).await?;
     let mut doc = surl_dom::parse_html(&html);
     if !no_js {
         let rt = surl_runtime::PageRuntime::with_base(doc, base.clone())?;
@@ -175,7 +229,11 @@ async fn snapshot_for(input: &str, no_js: bool) -> anyhow::Result<surl_core::sem
 }
 
 /// 取输入:返回 HTML 文本与用于解析相对链接的 base URL。
-async fn load(input: &str) -> anyhow::Result<(String, Option<url::Url>)> {
+/// jar 非空时,落地页的初始 GET 也带上登录态。
+async fn load(
+    input: &str,
+    jar: Option<surl_core::cookies::CookieJar>,
+) -> anyhow::Result<(String, Option<url::Url>)> {
     if input == "-" {
         let mut buf = String::new();
         std::io::stdin()
@@ -184,7 +242,7 @@ async fn load(input: &str) -> anyhow::Result<(String, Option<url::Url>)> {
         return Ok((buf, None));
     }
     if input.starts_with("http://") || input.starts_with("https://") {
-        let result = surl_core::fetch::fetch(input).await?;
+        let result = surl_core::fetch::fetch_with_cookies(input, jar).await?;
         if !(200..300).contains(&result.status) {
             // 项目起源就是 200 掩盖了空壳;非 2xx 更要明着说(可能是反爬挑战页)
             eprintln!(

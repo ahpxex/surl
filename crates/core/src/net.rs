@@ -25,6 +25,16 @@ impl ReqwestClient {
             client: client_builder().build()?,
         })
     }
+
+    /// 带导入的登录态:jar 里的 cookies 随匹配请求自动发送。
+    /// 主文档、外链 script、页面 fetch 共用这一个 client,故都带上 cookie。
+    pub fn with_cookies(
+        jar: crate::cookies::CookieJar,
+    ) -> Result<Self, reqwest::Error> {
+        Ok(ReqwestClient {
+            client: client_builder().cookie_provider(jar).build()?,
+        })
+    }
 }
 
 impl HttpClient for ReqwestClient {

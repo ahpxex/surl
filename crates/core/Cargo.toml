@@ -12,6 +12,7 @@ url.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+rookie = "0.5.6"
 
 [dev-dependencies]
 serde_json.workspace = true
