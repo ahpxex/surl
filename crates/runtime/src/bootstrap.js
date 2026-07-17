@@ -993,6 +993,15 @@
     hasAttribute(name) {
       return dom.hasAttribute(this._id, String(name));
     }
+    hasAttributes() {
+      return this.attributes.length > 0;
+    }
+    getAttributeNames() {
+      const out = [];
+      const attrs = this.attributes;
+      for (let i = 0; i < attrs.length; i++) out.push(attrs[i].name);
+      return out;
+    }
     get id() {
       return this.getAttribute("id") || "";
     }
@@ -1308,6 +1317,17 @@
       }
       return this._adopt(wrap(dom.createElement(tag)));
     }
+    importNode(node, deep) {
+      if (!(node instanceof Node)) throw new TypeError("importNode: argument is not a Node");
+      // 单 arena 设计:导入 ≈ 深克隆 + 归属(Lit 的模板实例化管线用它)
+      return this._adopt(node.cloneNode(!!deep));
+    }
+    adoptNode(node) {
+      if (!(node instanceof Node)) throw new TypeError("adoptNode: argument is not a Node");
+      const p = node.parentNode;
+      if (p) p.removeChild(node);
+      return this._adopt(node);
+    }
     createElementNS(ns, tag) {
       const v = validateAndExtract(ns, String(tag), validElementLocalName);
       return this._adopt(
@@ -1499,6 +1519,14 @@
   for (const [tag, name] of Object.entries(TAG_CLASS_NAMES)) {
     tagClassCache.set(tag, g[name]);
   }
+
+  // <template>.content:svelte5/lit 等编译产物的模板克隆路径
+  Object.defineProperty(g.HTMLTemplateElement.prototype, "content", {
+    configurable: true,
+    get() {
+      return wrap(dom.templateContent(this._id));
+    },
+  });
 
   g.EventTarget = EventTarget;
   g.Event = Event;
@@ -2291,6 +2319,185 @@
       return this._shadowRoot || null;
     },
   });
+
+  // ---- TreeWalker/NodeFilter:Lit 的模板处理管线依赖(demand-driven 收录)----
+  const NodeFilter = {
+    FILTER_ACCEPT: 1,
+    FILTER_REJECT: 2,
+    FILTER_SKIP: 3,
+    SHOW_ALL: 0xffffffff,
+    SHOW_ELEMENT: 0x1,
+    SHOW_ATTRIBUTE: 0x2,
+    SHOW_TEXT: 0x4,
+    SHOW_CDATA_SECTION: 0x8,
+    SHOW_ENTITY_REFERENCE: 0x10,
+    SHOW_ENTITY: 0x20,
+    SHOW_PROCESSING_INSTRUCTION: 0x40,
+    SHOW_COMMENT: 0x80,
+    SHOW_DOCUMENT: 0x100,
+    SHOW_DOCUMENT_TYPE: 0x200,
+    SHOW_DOCUMENT_FRAGMENT: 0x400,
+    SHOW_NOTATION: 0x800,
+  };
+  g.NodeFilter = NodeFilter;
+
+  class TreeWalker {
+    constructor(root, whatToShow, filter) {
+      this.root = root;
+      this.whatToShow = whatToShow === undefined ? 0xffffffff : whatToShow >>> 0;
+      this.filter = filter ?? null;
+      this.currentNode = root;
+    }
+    _accept(node) {
+      const bit = 1 << (node.nodeType - 1);
+      if (!(this.whatToShow & bit)) return NodeFilter.FILTER_SKIP;
+      if (!this.filter) return NodeFilter.FILTER_ACCEPT;
+      const f = typeof this.filter === "function" ? this.filter : this.filter.acceptNode;
+      return Number(f.call(this.filter, node));
+    }
+    parentNode() {
+      let node = this.currentNode;
+      while (node && node !== this.root) {
+        node = node.parentNode;
+        if (node && this._accept(node) === 1) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+      return null;
+    }
+    _traverseChildren(first) {
+      let node = first ? this.currentNode.firstChild : this.currentNode.lastChild;
+      while (node) {
+        const result = this._accept(node);
+        if (result === 1) {
+          this.currentNode = node;
+          return node;
+        }
+        if (result === 3) {
+          // SKIP:下钻孩子
+          const child = first ? node.firstChild : node.lastChild;
+          if (child) {
+            node = child;
+            continue;
+          }
+        }
+        // REJECT 或无孩子:找兄弟,再上溯
+        for (;;) {
+          const sibling = first ? node.nextSibling : node.previousSibling;
+          if (sibling) {
+            node = sibling;
+            break;
+          }
+          const parent = node.parentNode;
+          if (!parent || parent === this.root || parent === this.currentNode) return null;
+          node = parent;
+        }
+      }
+      return null;
+    }
+    firstChild() {
+      return this._traverseChildren(true);
+    }
+    lastChild() {
+      return this._traverseChildren(false);
+    }
+    _traverseSiblings(forward) {
+      let node = this.currentNode;
+      if (node === this.root) return null;
+      for (;;) {
+        let sibling = forward ? node.nextSibling : node.previousSibling;
+        while (sibling) {
+          node = sibling;
+          const result = this._accept(node);
+          if (result === 1) {
+            this.currentNode = node;
+            return node;
+          }
+          // SKIP 下钻,REJECT 跳兄弟
+          const child = forward ? node.firstChild : node.lastChild;
+          if (result === 2 || !child) {
+            sibling = forward ? node.nextSibling : node.previousSibling;
+          } else {
+            sibling = child;
+          }
+        }
+        node = node.parentNode;
+        if (!node || node === this.root) return null;
+        if (this._accept(node) === 1) return null;
+      }
+    }
+    nextSibling() {
+      return this._traverseSiblings(true);
+    }
+    previousSibling() {
+      return this._traverseSiblings(false);
+    }
+    previousNode() {
+      let node = this.currentNode;
+      while (node !== this.root) {
+        let sibling = node.previousSibling;
+        while (sibling) {
+          node = sibling;
+          let result = this._accept(node);
+          while (result !== 2 && node.lastChild) {
+            node = node.lastChild;
+            result = this._accept(node);
+          }
+          if (result === 1) {
+            this.currentNode = node;
+            return node;
+          }
+          sibling = node.previousSibling;
+        }
+        if (node === this.root || !node.parentNode) return null;
+        node = node.parentNode;
+        if (this._accept(node) === 1) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+      return null;
+    }
+    nextNode() {
+      let node = this.currentNode;
+      let result = NodeFilter.FILTER_ACCEPT;
+      for (;;) {
+        while (result !== 2 && node.firstChild) {
+          node = node.firstChild;
+          result = this._accept(node);
+          if (result === 1) {
+            this.currentNode = node;
+            return node;
+          }
+        }
+        let sibling = null;
+        let temp = node;
+        while (temp) {
+          if (temp === this.root) return null;
+          sibling = temp.nextSibling;
+          if (sibling) {
+            node = sibling;
+            break;
+          }
+          temp = temp.parentNode;
+        }
+        if (!temp) return null;
+        result = this._accept(node);
+        if (result === 1) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+    }
+  }
+  g.TreeWalker = TreeWalker;
+  DocumentNode.prototype.createTreeWalker = function (root, whatToShow, filter) {
+    if (!(root instanceof Node)) {
+      throw new TypeError("createTreeWalker: root is not a Node");
+    }
+    return new TreeWalker(root, whatToShow, filter);
+  };
 
   g.getComputedStyle = function (el) {
     return {
@@ -3196,7 +3403,9 @@
     value: function (promise) {
       if (promise && typeof promise.catch === "function") {
         promise.catch((e) => {
-          __surl_moduleFailures.push(String((e && (e.message || e.stack)) || e));
+          const msg = String((e && e.message) || e);
+          const stack = e && e.stack ? "\n" + String(e.stack) : "";
+          __surl_moduleFailures.push(msg + stack);
         });
       }
     },

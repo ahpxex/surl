@@ -46,6 +46,22 @@ impl Document {
             Some(el) => el.local_name().to_string(),
             None => "body".to_owned(),
         };
+        // template 的 innerHTML 落在 content fragment 里,不在常规子树
+        // (svelte5 的模板克隆管线依赖这一点);没有 content 就先造一个
+        let target = if context == "template" {
+            match self.element(target).and_then(|el| el.template_contents) {
+                Some(frag) => frag,
+                None => {
+                    let frag = self.create_node(crate::NodeData::Fragment);
+                    if let Some(el) = self.element_mut(target) {
+                        el.template_contents = Some(frag);
+                    }
+                    frag
+                }
+            }
+        } else {
+            target
+        };
         let (frag_doc, frag_root) = parse_fragment(html, &context);
         let old = self.node(target).children.clone();
         for child in old {

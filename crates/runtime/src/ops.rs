@@ -210,6 +210,27 @@ pub fn install(
     }
     {
         let dom = dom.clone();
+        // template 的 content fragment:惰性创建(createElement 造的模板一开始没有)
+        op!("templateContent", move |ctx: Ctx<'_>, id: f64| -> Result<f64> {
+            let mut doc = dom.borrow_mut();
+            let id = nid(&ctx, &doc, id)?;
+            let existing = doc.element(id).and_then(|el| el.template_contents);
+            let frag = match existing {
+                Some(f) => f,
+                None => {
+                    let f = doc.create_node(surl_dom::NodeData::Fragment);
+                    let Some(el) = doc.element_mut(id) else {
+                        return Err(Exception::throw_type(&ctx, "templateContent on non-element"));
+                    };
+                    el.template_contents = Some(f);
+                    f
+                }
+            };
+            Ok(fid(frag))
+        });
+    }
+    {
+        let dom = dom.clone();
         op!("createBareDocument", move || {
             fid(dom.borrow_mut().create_node(NodeData::Document))
         });
