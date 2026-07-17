@@ -72,6 +72,13 @@
   // 构造器能区分「包装既有节点(参数是句柄)」与「页面 new Text("data")」
   let wrapping = false;
 
+  // ---- custom elements:升级机制的共享状态(注册表 API 在下方装配)----
+  const ceRegistry = new Map(); // name -> { name, ctor, observed }
+  const ceByCtor = new Map(); // ctor -> name
+  // 构造器返回对象技巧:升级时把「正在升级的元素」放这里,
+  // Node 基类构造器发现它就直接 return,让 this 被替换成既有元素
+  let ceUpgrading = null;
+
   function wrap(id) {
     if (!id) return null;
     let node = cache.get(id);
@@ -83,6 +90,11 @@
       wrapping = false;
     }
     cache.set(id, node);
+    // 升级必须在 wrapping 清零后:用户构造器/回调可能 new Text() 等
+    if (ceRegistry.size && node.nodeType === 1) {
+      const entry = ceRegistry.get(node.localName);
+      if (entry && !node.__ceState) ceUpgrade(node, entry);
+    }
     return node;
   }
 
@@ -426,7 +438,22 @@
   class Node extends EventTarget {
     constructor(id) {
       super();
-      this._id = id;
+      if (ceUpgrading !== null) {
+        const el = ceUpgrading;
+        ceUpgrading = null;
+        return el; // 升级:this 被替换成既有元素,子类构造器继续在它上面跑
+      }
+      if (typeof id === "number") {
+        this._id = id;
+        return;
+      }
+      // 页面直接 new 一个已注册的自定义元素类;其余裸 new 是非法的
+      const ceName = ceByCtor.get(new.target);
+      if (!ceName) throw new TypeError("Illegal constructor");
+      const newId = dom.createElement(ceName);
+      this._id = newId;
+      cache.set(newId, this);
+      this.__ceState = "upgraded"; // 直构天然已升级
     }
     get nodeType() {
       return dom.nodeType(this._id);
@@ -993,6 +1020,10 @@
     }
     set innerHTML(html) {
       dom.setInnerHTML(this._id, html == null ? "" : String(html));
+      // 新子树里的已注册自定义元素:querySelectorAll 的包装副作用即触发升级
+      if (ceRegistry.size) {
+        for (const name of ceRegistry.keys()) this.querySelectorAll(name);
+      }
     }
     get outerHTML() {
       return dom.outerHTML(this._id);
@@ -1234,6 +1265,17 @@
   }
 
   class DocumentNode extends Node {
+    constructor(id) {
+      if (wrapping) {
+        super(id);
+        return;
+      }
+      // 页面侧 new Document():空文档,内容类型按规范是 application/xml
+      const newId = dom.createBareDocument();
+      super(newId);
+      cache.set(newId, this);
+      this._contentType = "application/xml";
+    }
     get documentElement() {
       return wrap(dom.documentElement(this._id));
     }
@@ -2152,6 +2194,7 @@
         makeMutationRecord("attributes", this, { attributeName: key, oldValue }),
       );
     }
+    ceReactAttr(this, key, oldValue, String(value));
   };
   const rawRemoveAttribute = Element.prototype.removeAttribute;
   Element.prototype.removeAttribute = function (attrName) {
@@ -2163,6 +2206,7 @@
         makeMutationRecord("attributes", this, { attributeName: key, oldValue }),
       );
     }
+    if (oldValue !== null) ceReactAttr(this, key, oldValue, null);
   };
 
   // 埋点:树结构变更
@@ -2180,31 +2224,42 @@
   const rawAppendChild = Node.prototype.appendChild;
   Node.prototype.appendChild = function (child) {
     const prev = this.lastChild;
+    // fragment 插入会搬空孩子:先快照(MutationObserver 与 CE 反应都要)
+    const added = child instanceof DocumentFragment ? [...child.childNodes] : [child];
     const result = rawAppendChild.call(this, child);
-    notifyChildList(this, child instanceof DocumentFragment ? [] : [child], [], prev, null);
-    maybeRunInsertedScript(child);
+    notifyChildList(this, added, [], prev, null);
+    for (const n of added) {
+      maybeRunInsertedScript(n);
+      ceReactInsert(n);
+    }
     return result;
   };
   const rawInsertBefore = Node.prototype.insertBefore;
   Node.prototype.insertBefore = function (node, reference) {
+    const added = node instanceof DocumentFragment ? [...node.childNodes] : [node];
     // arguments 原样转发:参数个数检查在原方法里
     const result = rawInsertBefore.apply(this, arguments);
     notifyChildList(
       this,
-      node instanceof DocumentFragment ? [] : [node],
+      added,
       [],
-      node.previousSibling,
+      added.length ? added[0].previousSibling : null,
       reference || null,
     );
-    maybeRunInsertedScript(node);
+    for (const n of added) {
+      maybeRunInsertedScript(n);
+      ceReactInsert(n);
+    }
     return result;
   };
   const rawRemoveChild = Node.prototype.removeChild;
   Node.prototype.removeChild = function (child) {
     const prev = child.previousSibling;
     const next = child.nextSibling;
+    const wasConnected = child.isConnected;
     const result = rawRemoveChild.call(this, child);
     notifyChildList(this, [], [child], prev, next);
+    if (wasConnected) ceReactRemove(child);
     return result;
   };
 
@@ -2219,6 +2274,21 @@
       if (activeMutationObservers.size && (this.nodeType === 3 || this.nodeType === 8)) {
         notifyMutation(makeMutationRecord("characterData", this, { oldValue }));
       }
+    },
+  });
+
+  // Shadow DOM:刻意做成光合并(light-DOM merge)——shadow 内容直接
+  // 落在宿主元素下。不渲染像素就没有封装的意义,而结构提取恰恰需要
+  // 看到内容(Lit 等库把全部渲染结果放进 shadow root)。代价:closed
+  // mode 不隐藏、:host/slot 不做——产品选择,不是疏漏。
+  Element.prototype.attachShadow = function () {
+    this._shadowRoot = this;
+    return this;
+  };
+  Object.defineProperty(Element.prototype, "shadowRoot", {
+    configurable: true,
+    get() {
+      return this._shadowRoot || null;
     },
   });
 
@@ -2333,6 +2403,11 @@
       });
     },
   });
+  Node.prototype.getRootNode = function () {
+    let n = this;
+    while (n.parentNode) n = n.parentNode;
+    return n;
+  };
   Object.defineProperty(Node.prototype, "isConnected", {
     configurable: true,
     get() {
@@ -2743,18 +2818,109 @@
   XMLHttpRequest.DONE = 4;
   g.XMLHttpRequest = XMLHttpRequest;
 
-  // customElements:注册表语义(define/get/whenDefined),不做真实升级——
-  // 自定义元素以 HTMLElement 形态存在于树里,结构提取不受影响
+  // customElements:真实升级——define 时既有元素原地变身(setPrototypeOf +
+  // 构造器返回对象技巧),之后 wrap/插入/属性路径分发生命周期回调。
+  // github 的 include-fragment、astro-island、整个 Lit 生态都住在回调里。
+  function ceCallback(el, name, args) {
+    const fn = el[name];
+    if (typeof fn !== "function") return;
+    try {
+      fn.apply(el, args || []);
+    } catch (e) {
+      console.error(
+        "custom element " + name + " error:",
+        e && e.message ? e.message : String(e),
+      );
+    }
+  }
+  function ceUpgrade(el, entry) {
+    if (el.__ceState) return;
+    el.__ceState = "upgrading";
+    Object.setPrototypeOf(el, entry.ctor.prototype);
+    ceUpgrading = el;
+    try {
+      new entry.ctor();
+    } catch (e) {
+      ceUpgrading = null;
+      el.__ceState = "failed";
+      console.error(
+        "custom element constructor error:",
+        e && e.message ? e.message : String(e),
+      );
+      return;
+    }
+    el.__ceState = "upgraded";
+    for (const attr of entry.observed) {
+      const v = el.getAttribute(attr);
+      if (v !== null) ceCallback(el, "attributeChangedCallback", [attr, null, v, null]);
+    }
+    if (el.isConnected) ceCallback(el, "connectedCallback");
+  }
+  function ceForSubtree(node, fn) {
+    if (node.nodeType !== 1) return;
+    fn(node);
+    for (const el of node.querySelectorAll("*")) fn(el);
+  }
+  function ceReactInsert(node) {
+    if (!ceRegistry.size || node.nodeType !== 1 || !node.isConnected) return;
+    ceForSubtree(node, (el) => {
+      const entry = ceRegistry.get(el.localName);
+      if (!entry) return;
+      if (!el.__ceState) ceUpgrade(el, entry); // 升级本身会补 connectedCallback
+      else if (el.__ceState === "upgraded") ceCallback(el, "connectedCallback");
+    });
+  }
+  function ceReactRemove(node) {
+    if (!ceRegistry.size || node.nodeType !== 1) return;
+    ceForSubtree(node, (el) => {
+      if (el.__ceState === "upgraded") ceCallback(el, "disconnectedCallback");
+    });
+  }
+  function ceReactAttr(el, name, oldValue, newValue) {
+    if (el.__ceState !== "upgraded") return;
+    const entry = ceRegistry.get(el.localName);
+    if (!entry || !entry.observed.includes(name)) return;
+    ceCallback(el, "attributeChangedCallback", [name, oldValue, newValue, null]);
+  }
   {
-    const registry = new Map();
     const waiting = new Map();
     g.customElements = {
       define(name, ctor) {
-        name = String(name).toLowerCase();
-        if (registry.has(name)) {
-          throw new DOMException("customElements: '" + name + "' already defined", "NotSupportedError");
+        name = String(name);
+        if (typeof ctor !== "function") {
+          throw new TypeError("customElements.define: constructor required");
         }
-        registry.set(name, ctor);
+        // 名字规则的实用近似:小写字母开头、含连字符、无 ASCII 大写
+        if (!/^[a-z]/.test(name) || !name.includes("-") || /[A-Z]/.test(name)) {
+          throw new DOMException(
+            "customElements.define: invalid name: " + name,
+            "SyntaxError",
+          );
+        }
+        if (ceRegistry.has(name)) {
+          throw new DOMException(
+            "customElements: '" + name + "' already defined",
+            "NotSupportedError",
+          );
+        }
+        if (ceByCtor.has(ctor)) {
+          throw new DOMException(
+            "customElements: constructor already registered",
+            "NotSupportedError",
+          );
+        }
+        let observed = [];
+        try {
+          const oa = ctor.observedAttributes;
+          if (oa) observed = [...oa].map(String);
+        } catch (e) {
+          /* getter 抛错按无观察属性处理 */
+        }
+        const entry = { name, ctor, observed };
+        ceRegistry.set(name, entry);
+        ceByCtor.set(ctor, name);
+        // 升级文档里既有的同名元素(文档序)
+        for (const el of g.document.querySelectorAll(name)) ceUpgrade(el, entry);
         const resolvers = waiting.get(name);
         if (resolvers) {
           waiting.delete(name);
@@ -2762,21 +2928,27 @@
         }
       },
       get(name) {
-        return registry.get(String(name).toLowerCase());
+        const entry = ceRegistry.get(String(name));
+        return entry ? entry.ctor : undefined;
       },
       getName(ctor) {
-        for (const [n, c] of registry) if (c === ctor) return n;
-        return null;
+        return ceByCtor.get(ctor) ?? null;
       },
       whenDefined(name) {
-        name = String(name).toLowerCase();
-        if (registry.has(name)) return Promise.resolve(registry.get(name));
+        name = String(name);
+        const entry = ceRegistry.get(name);
+        if (entry) return Promise.resolve(entry.ctor);
         return new Promise((resolve) => {
           if (!waiting.has(name)) waiting.set(name, []);
           waiting.get(name).push(resolve);
         });
       },
-      upgrade() {},
+      upgrade(root) {
+        if (root instanceof Node) ceForSubtree(root, (el) => {
+          const entry = ceRegistry.get(el.localName);
+          if (entry && !el.__ceState) ceUpgrade(el, entry);
+        });
+      },
     };
   }
 

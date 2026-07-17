@@ -131,11 +131,9 @@
     "Default prevention via returnValue": "FAIL: assert_equals: expected (object) Element node <input id=\"target\" type=\"hidden\" value=\"\"></input> but got (undefined) undefined"
   },
   "dom/events/Event-dispatch-bubbles-false.html": {
-    "In new Document()": "FAIL: Error converting from js 'undefined' into type 'f64'",
     "In window.document with click event": "FAIL: assert_array_equals: targets lengths differ, expected array [object \"[object global]\", Document node with 2 children, Element node <html><head><meta charset=\"utf-8\">"
   },
   "dom/events/Event-dispatch-bubbles-true.html": {
-    "In new Document()": "FAIL: Error converting from js 'undefined' into type 'f64'",
     "In window.document with click event": "FAIL: assert_array_equals: targets lengths differ, expected array [object \"[object global]\", Document node with 2 children, Element node <html><head><meta charset=\"utf-8\">"
   },
   "dom/events/Event-dispatch-click.html": {
@@ -172,10 +170,10 @@
     "attached checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: assert_true: expected true got false",
     "attached radio should emit input and change events on click().": "FAIL: assert_true: expected true got false",
     "attached radio should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: assert_true: expected true got false",
-    "attached to shadow dom checkbox should emit input and change events on click().": "FAIL: not a function",
-    "attached to shadow dom checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: not a function",
-    "attached to shadow dom radio should emit input and change events on click().": "FAIL: not a function",
-    "attached to shadow dom radio should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: not a function"
+    "attached to shadow dom checkbox should emit input and change events on click().": "FAIL: assert_true: expected true got false",
+    "attached to shadow dom checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: assert_true: expected true got false",
+    "attached to shadow dom radio should emit input and change events on click().": "FAIL: assert_true: expected true got false",
+    "attached to shadow dom radio should emit input and change events on dispatchEvent(new MouseEvent('click')).": "FAIL: assert_true: expected true got false"
   },
   "dom/events/Event-dispatch-handlers-changed.html": {
     " Dispatch additional events inside an event listener ": "FAIL: assert_array_equals: actual_targets lengths differ, expected array [object \"[object global]\", Document node with 2 children, Element node <html><head><meta charset=\"utf-8\">"
@@ -350,9 +348,9 @@
     "window.event is set to the current event during dispatch": "FAIL: cannot read property 'type' of undefined",
     "window.event is set to the current event, which is the event passed to dispatch": "FAIL: assert_equals: expected (undefined) undefined but got (object) object \"[object Object]\"",
     "window.event is set to the current event, which is the event passed to dispatch (2)": "TIMEOUT: Test timed out",
-    "window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree)": "FAIL: not a function",
-    "window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree)": "FAIL: not a function",
-    "window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree)": "FAIL: not a function"
+    "window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree)": "FAIL: assert_equals: expected (object) object \"[object Object]\" but got (undefined) undefined",
+    "window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree)": "FAIL: assert_equals: expected (object) object \"[object Object]\" but got (undefined) undefined",
+    "window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree)": "FAIL: assert_true: expected true got false"
   },
   "dom/events/event-src-element-nullable.html": {
     "Event srcElement should be nullable": "FAIL: assert_equals: expected (object) null but got (undefined) undefined"
@@ -1716,7 +1714,6 @@
     "__harness__": "status 2: "
   },
   "dom/nodes/Document-constructor.html": {
-    "new Document(): children": "FAIL: Error converting from js 'undefined' into type 'f64'",
     "new Document(): metadata": "FAIL: assert_equals: expected (object) null but got (undefined) undefined"
   },
   "dom/nodes/Document-contentType/contentType/contenttype_bmp.html": {
@@ -2386,9 +2383,6 @@
     "Optional arguments to createTreeWalker should be optional (3 passed, function).": "FAIL: not a function",
     "Optional arguments to createTreeWalker should be optional (3 passed, null).": "FAIL: not a function"
   },
-  "dom/nodes/Document-doctype.html": {
-    "new Document()": "FAIL: Error converting from js 'undefined' into type 'f64'"
-  },
   "dom/nodes/Document-getElementById.html": {
     "Calling document.getElementById with an empty string argument.": "FAIL: assert_equals: expected null but got Element node <div id=\"\"></div>",
     "add id attribute via outerHTML": "FAIL: assert_not_equals: should not be null got disallowed value null",
@@ -2588,11 +2582,9 @@
     "Range (r80) is created": "FAIL: not a function",
     "Range (r90) is created": "FAIL: not a function",
     "__harness__": "status 2: ",
-    "childList Node.appendChild: fragment addition mutations": "FAIL: assert_array_equals: addedNodes didn't match lengths differ, expected array [Text node \"11\", Text node \"22\"] length 2, got [] length 0",
     "childList Node.appendChild: fragment removal mutations": "TIMEOUT: Test timed out",
     "childList Node.appendChild: removal and addition mutations": "FAIL: assert_equals: mutation records must match expected 2 but got 1",
     "childList Node.appendChild: removal mutation": "TIMEOUT: Test timed out",
-    "childList Node.insertBefore: fragment addition mutations": "FAIL: assert_array_equals: addedNodes didn't match lengths differ, expected array [Text node \"11\", Text node \"22\"] length 2, got [] length 0",
     "childList Node.insertBefore: fragment removal mutations": "TIMEOUT: Test timed out",
     "childList Node.insertBefore: removal and addition mutations": "FAIL: assert_equals: mutation records must match expected 2 but got 1",
     "childList Node.insertBefore: removal mutation": "TIMEOUT: Test timed out",
@@ -2654,7 +2646,7 @@
   },
   "dom/nodes/Node-childNodes.html": {
     "Caching of Node.childNodes": "FAIL: assert_equals: expected [] but got []",
-    "Node.childNodes on a Document.": "FAIL: Error converting from js 'undefined' into type 'f64'",
+    "Node.childNodes on a Document.": "FAIL: assert_equals: expected [] but got [Element node <p></p>]",
     "Node.childNodes on a DocumentFragment.": "FAIL: assert_equals: expected [] but got [Element node <p></p>]",
     "Node.childNodes on an Element.": "FAIL: assert_equals: expected [] but got [Element node <p></p>]",
     "Node.childNodes should be a live collection": "FAIL: NodeList is not defined"
@@ -2669,10 +2661,6 @@
     "createAttribute": "FAIL: not a function",
     "createAttributeNS": "FAIL: not a function",
     "implementation.createDocument": "FAIL: assert_equals: contentType equality expected \"text/html\" but got \"application/xml\""
-  },
-  "dom/nodes/Node-isConnected-shadow-dom.html": {
-    "Node.isConnected in a closed shadow tree": "FAIL: not a function",
-    "Node.isConnected in a open shadow tree": "FAIL: not a function"
   },
   "dom/nodes/Node-isConnected.html": {
     "Test with iframes": "FAIL: cannot read property 'body' of null"
@@ -3179,22 +3167,15 @@
     "When adding a script+form in a fragment and the form matches an associated element, the script that checks whether the button is associated to the form should run after inserting the form": "FAIL: assert_equals: expected (object) Element node <form id=\"someForm\"></form> but got (undefined) undefined"
   },
   "dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html": {
-    "<meta name=referrer> gets processed and applied in the post-insertion steps": "FAIL: assert_equals: preMetaReferrer is the full URL; by the time the first script runs in its post-insertion steps, the later-inserted meta tag has not run its post-insertion steps, which is where meta tags are processed expected (string) \"https://wpt.test/dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html\" but got (undefined) undefined"
+    "<meta name=referrer> gets processed and applied in the post-insertion steps": "FAIL: assert_equals: preMetaReferrer is the full URL; by the time the first script runs in its post-insertion steps, the later-inserted meta tag has not run its post-insertion steps, which is where meta tags are processed expected \"https://wpt.test/dom/nodes/insertion-removing-steps/Node-append-meta-referrer-and-script-from-fragment.html\" but got \"\""
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-button-from-div.html": {
     "Script inserted before a form-associated button can observe the button's form, because by the time the script executes, the DOM insertion that associates the button with the form is already done": "FAIL: assert_equals: expected Element node <form id=\"form\"><div><script>"
   },
-  "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-custom-from-fragment.html": {
-    "An earlier-inserted script can upgrade a later-inserted custom element, whose upgrading is synchronously observable to the script, since DOM insertion has been completed by the time it runs": "FAIL: assert_true: expected true got false"
-  },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-default-style-meta-from-fragment.html": {
     "Inserting <meta> that uses alternate stylesheets, applies the style during DOM post-insertion steps": "FAIL: assert_true: script has run after insertion expected true got false"
   },
-  "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-div-from-fragment.html": {
-    "Earlier-inserted scripts can observe the parentNode of later-inserted nodes, because script runs after DOM insertion completes": "FAIL: assert_equals: expected Element node <head><meta charset=\"utf-8\">"
-  },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-iframe.html": {
-    "A script inserted atomically before an iframe (using a DocumentFragment) does not observe the iframe's contentWindow, since the 'script running' and 'iframe setup' both happen in order, after DOM insertion completes": "FAIL: assert_equals: expected \"contentWindow is null\" but got \"script not run yet\"",
     "A script inserted atomically before an iframe (using a div) does not observe the iframe's contentWindow, since the 'script running' and 'iframe setup' both happen in order, after DOM insertion completes": "FAIL: assert_equals: expected \"contentWindow is null\" but got \"script not run yet\"",
     "Script inserted after an iframe in the same appendChild() call can observe the iframe's non-null contentWindow": "FAIL: assert_equals: expected \"iframe with content window\" but got \"script not run yet\""
   },
@@ -3202,14 +3183,14 @@
     "Empty <source> immediately sets media.networkState during DOM insertion, so that an earlier-running script can observe networkState": "FAIL: HTMLMediaElement is not defined"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-and-style.html": {
-    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a DocumentFragment) being applied": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\", 2] length 2, got [] length 0",
+    "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a DocumentFragment) being applied": "FAIL: assert_array_equals: expected property 0 to be \"sheet\" but got null (expected array [\"sheet\", 2] got [null, undefined])",
     "An earlier-inserted <script> synchronously observes a later-inserted <style> (via a div) being applied": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\", 2] length 2, got [] length 0",
-    "Earlier-inserted <script> (via a DocumentFragment) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\"] length 1, got [] length 0",
+    "Earlier-inserted <script> (via a DocumentFragment) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: expected property 0 to be \"sheet\" but got null (expected array [\"sheet\"] got [null])",
     "Earlier-inserted <script> (via a append()) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: expected property 0 to be \"sheet\" but got null (expected array [\"sheet\"] got [null])",
     "Earlier-inserted <script> (via a div) synchronously observes a later-inserted <link rel=stylesheet>'s CSSStyleSheet creation": "FAIL: assert_array_equals: lengths differ, expected array [\"sheet\"] length 1, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-script-in-script.html": {
-    "An outer script whose preparation/execution gets triggered by the insertion of a 'nested'/'inner' script, executes *before* the inner script executes": "FAIL: assert_array_equals: lengths differ, expected array [\"s1\", \"s2\", \"s2ran\"] length 3, got [] length 0"
+    "An outer script whose preparation/execution gets triggered by the insertion of a 'nested'/'inner' script, executes *before* the inner script executes": "FAIL: assert_array_equals: lengths differ, expected array [\"s1\", \"s2\", \"s2ran\"] length 3, got [\"s2\"] length 1"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-text-and-script-in-style.html": {
     "All style rules appended to a <style> element are inserted and script-observable to scripts inserted in the `<style>` element, by the time scripts execute after DOM insertions.": "FAIL: assert_array_equals: lengths differ, expected array [2] length 1, got [] length 0"
@@ -3218,7 +3199,7 @@
     "Node.appendChild: inserting two text nodes in an empty script": "FAIL: assert_array_equals: lengths differ, expected array [\"t1\", \"t2\"] length 2, got [] length 0"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts-from-fragment.html": {
-    "Node.appendChild: inserting three scripts from a document fragment": "FAIL: assert_array_equals: lengths differ, expected array [\"s3\", \"s1\", \"s2\"] length 3, got [] length 0"
+    "Node.appendChild: inserting three scripts from a document fragment": "FAIL: assert_array_equals: expected property 0 to be \"s3\" but got \"s1\" (expected array [\"s3\", \"s1\", \"s2\"] got [\"s1\", \"s2\", \"s3\"])"
   },
   "dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts.html": {
     "Node.appendChild: inserting three scripts from a div": "FAIL: assert_array_equals: lengths differ, expected array [\"s3\", \"s1\", \"s2\"] length 3, got [] length 0"
@@ -3374,7 +3355,7 @@
   "dom/nodes/moveBefore/moveBefore-name-map.html": {
     "moveBefore() correctly updates name map ordering in document": "FAIL: not a function",
     "moveBefore() correctly updates name map when moving into shadow root": "FAIL: container is not defined",
-    "moveBefore() correctly updates window map": "FAIL: not a function"
+    "moveBefore() correctly updates window map": "FAIL: assert_equals: expected (object) Element node <img name=\"target2\" data-target2=\"\"></img> but got (undefined) undefined"
   },
   "dom/nodes/moveBefore/moveBefore-nodeiterator.html": {
     "moveBefore() runs NodeIterator pre-remove steps": "FAIL: NodeFilter is not defined"
@@ -3442,10 +3423,10 @@
     "moveBefore should not reset selection with preceding text": "FAIL: promise_test: Unhandled rejection with value: object \"ReferenceError: text is not defined\""
   },
   "dom/nodes/moveBefore/slotchange-events.html": {
-    "Moving a slot runs the assign slottables algorithm": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: cannot read property 'children' of undefined\"",
-    "Moving a slottable into and out out of a custom element fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: cannot read property 'children' of undefined\"",
-    "Moving default content into a slot fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: cannot read property 'children' of undefined\"",
-    "Moving default content out of a slot fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: cannot read property 'children' of undefined\""
+    "Moving a slot runs the assign slottables algorithm": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
+    "Moving a slottable into and out out of a custom element fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
+    "Moving default content into a slot fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
+    "Moving default content out of a slot fires 'slotchange' event": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\""
   },
   "dom/nodes/moveBefore/style-applies.html": {
     "Moving a style inside the document should not affect whether it's applied": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\""
@@ -3624,11 +3605,7 @@
     "replaceWith() should be unscopable": "FAIL: cannot read property 'replaceWith' of undefined"
   },
   "dom/nodes/rootNode.html": {
-    "getRootNode() must return a document fragment when a node is in the fragment": "FAIL: not a function",
-    "getRootNode() must return context object's shadow-including root if options's composed is true, and context object's root otherwise": "FAIL: not a function",
-    "getRootNode() must return the context object when it does not have any parent": "FAIL: not a function",
-    "getRootNode() must return the document when a node is in document": "FAIL: not a function",
-    "getRootNode() must return the parent node of the context object when the context object has a single ancestor not in a document": "FAIL: not a function"
+    "getRootNode() must return context object's shadow-including root if options's composed is true, and context object's root otherwise": "FAIL: assert_equals: getRootNode() must return context object's root if options's composed is false expected Element node <div><div class=\"shadowChild\">content</div></div> but got Document node with 2 children"
   },
   "dom/nodes/svg-template-querySelector.html": {
     "querySelector works on template contents fragments with HTML elements (sanity check)": "FAIL: cannot read property 'querySelector' of undefined",
@@ -4067,10 +4044,10 @@
     "scheduler: appending non-text children to script ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"end inline script #2\", \"end inline script #1\"] length 4, got [\"inline script #1\", \"end inline script #1\"] length 2"
   },
   "html/semantics/scripting-1/the-script-element/execution-timing/128.html": {
-    "scheduler: appending script element to script ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #3\", \"inline script #2\", \"end inline script #2\", \"end inline script #1\"] length 5, got [\"inline script #1\", \"end inline script #1\"] length 2"
+    "scheduler: appending script element to script ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #3\", \"inline script #2\", \"end inline script #2\", \"end inline script #1\"] length 5, got [\"inline script #1\", \"inline script #3\", \"end inline script #1\"] length 3"
   },
   "html/semantics/scripting-1/the-script-element/execution-timing/129.html": {
-    "scheduler: appending multiple script elements": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"inline script #3\", \"inline script #4\", \"end inline script #1\"] length 5, got [\"inline script #1\", \"end inline script #1\"] length 2"
+    "scheduler: appending multiple script elements": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"inline script #3\", \"inline script #4\", \"end inline script #1\"] length 5, got [\"inline script #1\", \"inline script #2\", \"inline script #4\", \"end inline script #1\"] length 4"
   },
   "html/semantics/scripting-1/the-script-element/execution-timing/130.html": {
     "scheduler: appending external script element to script ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"end inline script #2\", \"end inline script #1\", \"external script #1\"] length 5, got [\"inline script #1\", \"end inline script #1\"] length 2"
@@ -4116,12 +4093,6 @@
   },
   "html/semantics/scripting-1/the-script-element/execution-timing/146-href.html": {
     "scheduler: SVG script adding src attribute ": "FAIL: assert_array_equals: lengths differ, expected array [\"external script #1\"] length 1, got [] length 0"
-  },
-  "html/semantics/scripting-1/the-script-element/execution-timing/147.html": {
-    "scheduler: insert multiple inline scripts; first script moves subsequent scripts ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"inline script #3\", \"inline script #4\"] length 4, got [\"inline script #1\"] length 1"
-  },
-  "html/semantics/scripting-1/the-script-element/execution-timing/148.html": {
-    "scheduler: insert multiple inline scripts; first script deletes subsequent script ": "FAIL: assert_array_equals: lengths differ, expected array [\"inline script #1\", \"inline script #2\", \"inline script #4\"] length 3, got [\"inline script #1\"] length 1"
   },
   "html/semantics/scripting-1/the-script-element/execution-timing/149.html": {
     "__script_error__": "js exception: surl:inline-script: not a function",
