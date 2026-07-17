@@ -233,6 +233,25 @@ impl PageRuntime {
         self.script_wall_budget = budget;
     }
 
+    /// 页面脚本运行前,把导入的 localStorage 键值对灌进 JS 世界。
+    /// 在 load() 之前调用——SPA 的脚本一跑就读 localStorage 找 token。
+    pub fn seed_local_storage(&self, items: &[(String, String)]) -> Result<(), RuntimeError> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let map: serde_json::Map<String, serde_json::Value> = items
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        // JSON 是 JS 字面量子集(quickjs-ng ES2023,U+2028/2029 也合法),
+        // 直接内嵌;转义由 serde_json 保证
+        let json = serde_json::Value::Object(map).to_string();
+        let src = format!(
+            "(function(s){{for(const k in s){{try{{localStorage.setItem(k,s[k]);}}catch(e){{}}}}}})({json});"
+        );
+        self.eval(&src)
+    }
+
     /// 在设定截止时刻的前提下进入 JS;返回后清除,避免影响宿主间隙。
     fn with_deadline<T>(&self, f: impl FnOnce() -> T) -> T {
         self.exec_deadline

@@ -50,10 +50,23 @@ pub fn browser_cookies(browser: &str, domain: Option<&str>) -> Result<Vec<Cookie
     })
 }
 
+/// 目标 host 的注册域(粗略 eTLD+1:取末两段)。用它过滤才能带上子域 cookie
+/// ——`www.youtube.com` 的登录 cookie 存在 `.youtube.com`,按 host 全名过滤会漏。
+/// multi-level TLD(co.uk)会略宽,无害:最终由 jar 按请求 URL 精确匹配。
+fn registrable_domain(host: &str) -> String {
+    let labels: Vec<&str> = host.split('.').filter(|s| !s.is_empty()).collect();
+    if labels.len() <= 2 {
+        host.to_owned()
+    } else {
+        labels[labels.len() - 2..].join(".")
+    }
+}
+
 /// 为一个目标 URL 构建 cookie jar(只含该站相关、未过期的 cookies)。
 /// 返回 (jar, 装入条数)。
 pub fn jar_for_url(browser: &str, url: &Url) -> Result<(Arc<Jar>, usize), CookiesError> {
-    let cookies = browser_cookies(browser, url.host_str())?;
+    let domain = url.host_str().map(registrable_domain);
+    let cookies = browser_cookies(browser, domain.as_deref())?;
     let jar = Jar::default();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

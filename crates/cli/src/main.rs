@@ -37,8 +37,10 @@ struct Args {
     #[arg(long)]
     stats: bool,
 
-    /// 从本机浏览器导入登录态(cookies):chrome/firefox/safari/brave/edge/arc/…
-    /// 或 any 自动探测。只取目标站相关 cookies。macOS Chrome 首次会弹钥匙串授权。
+    /// 从本机浏览器导入登录态,以已登录身份渲染。导入 cookies(所有浏览器)
+    /// 与 localStorage(仅 Chromium 家族)。取值 chrome / firefox / safari /
+    /// brave / edge / arc / any(自动探测)。只取目标站相关;macOS Chrome
+    /// 首次弹钥匙串授权。
     #[arg(long, value_name = "BROWSER")]
     cookies_from_browser: Option<String>,
 }
@@ -64,6 +66,15 @@ enum Command {
         /// 只导出该域(含子域)的 cookies
         #[arg(long)]
         domain: Option<String>,
+    },
+
+    /// 导出某 origin 的 localStorage(仅 Chromium 家族),排障与查看用。
+    /// 注意:可能含明文 token,与密码同等敏感。
+    Storage {
+        /// 浏览器:chrome/chromium/brave/edge/vivaldi/opera
+        browser: String,
+        /// origin,如 https://github.com
+        origin: String,
     },
 }
 
@@ -91,30 +102,50 @@ async fn main() -> anyhow::Result<()> {
             print!("{}", surl_core::cookies::to_netscape(&cookies));
             return Ok(());
         }
+        Some(Command::Storage { browser, origin }) => {
+            let items = surl_core::localstorage::browser_local_storage(&browser, &origin)?;
+            eprintln!("surl: {} localStorage items for {origin}", items.len());
+            for (k, v) in &items {
+                println!("{k}\t{v}");
+            }
+            return Ok(());
+        }
         None => {}
     }
     let Some(input) = args.input.as_deref() else {
         anyhow::bail!("missing input (URL / file / `-`); see --help");
     };
 
-    // 登录态:按目标 URL 的域取 cookies,建一个所有出网请求共用的 jar
-    let jar = match &args.cookies_from_browser {
-        Some(browser) => match url::Url::parse(input) {
+    // 登录态:cookies 建共用 jar,localStorage 待运行时起来后灌入。
+    // 两者一起构成「以我在浏览器里的身份渲染」。
+    let mut jar = None;
+    let mut local_storage: Vec<(String, String)> = Vec::new();
+    if let Some(browser) = &args.cookies_from_browser {
+        match url::Url::parse(input) {
             Ok(url) => {
-                let (jar, n) = surl_core::cookies::jar_for_url(browser, &url)?;
+                let (j, n) = surl_core::cookies::jar_for_url(browser, &url)?;
+                jar = Some(j);
+                // localStorage 仅 Chromium 家族;其余(firefox/safari/any)只导 cookie
+                let mut ls_note = String::new();
+                if surl_core::localstorage::supports_local_storage(browser) {
+                    let origin = url.origin().ascii_serialization();
+                    match surl_core::localstorage::browser_local_storage(browser, &origin) {
+                        Ok(items) => {
+                            ls_note = format!(" + {} localStorage items", items.len());
+                            local_storage = items;
+                        }
+                        // localStorage 读失败不致命:cookie 已够多数站登录
+                        Err(e) => eprintln!("surl: localStorage 跳过({e})"),
+                    }
+                }
                 eprintln!(
-                    "surl: loaded {n} cookies from {browser} for {}",
+                    "surl: loaded {n} cookies{ls_note} from {browser} for {}",
                     url.host_str().unwrap_or("?")
                 );
-                Some(jar)
             }
-            Err(_) => {
-                eprintln!("surl: --cookies-from-browser 仅对 URL 生效,已忽略");
-                None
-            }
-        },
-        None => None,
-    };
+            Err(_) => eprintln!("surl: --cookies-from-browser 仅对 URL 生效,已忽略"),
+        }
+    }
 
     let doc_start = std::time::Instant::now();
     let (html, base) = load(input, jar.clone()).await?;
@@ -124,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
     let mut doc = surl_dom::parse_html(&html);
     if !args.no_js {
         let rt = surl_runtime::PageRuntime::with_base(doc, base.clone())?;
+        rt.seed_local_storage(&local_storage)?;
         let net = make_client(jar.clone())?;
         let report = rt
             .load(&net, surl_runtime::SettleOptions::default())

@@ -590,3 +590,26 @@ async fn iterator_find_filter_do_not_leak_on_teardown() {
     rt.load(&NoNetwork, SettleOptions::default()).await.unwrap();
     drop(rt); // 泄漏在这里引爆(JS_FreeRuntime assert)
 }
+
+/// 导入的登录态:seed_local_storage 灌入的键值,页面脚本一起跑就能读到
+/// (SPA 的 auth 常存在 localStorage;--cookies-from-browser 的另一半)。
+#[tokio::test]
+async fn seeded_local_storage_is_visible_to_page_scripts() {
+    let rt = PageRuntime::new(parse_html(
+        r#"<!doctype html><div id="x"></div>
+        <script>
+          const t = localStorage.getItem("auth_token");
+          document.getElementById("x").textContent = t + "/" + localStorage.length;
+        </script>"#,
+    ))
+    .unwrap();
+    // 含引号/反斜杠的值:验证 JSON 内嵌的转义正确
+    rt.seed_local_storage(&[
+        ("auth_token".into(), r#"ey"J.a\b"#.into()),
+        ("theme".into(), "dark".into()),
+    ])
+    .unwrap();
+    rt.load(&NoNetwork, SettleOptions::default()).await.unwrap();
+    let html = rt.document().to_html();
+    assert!(html.contains(r#"ey"J.a\b/2"#), "{html}");
+}

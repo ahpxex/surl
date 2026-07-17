@@ -6,6 +6,7 @@
 
 pub mod cookies;
 pub mod fetch;
+pub mod localstorage;
 pub mod markdown;
 pub mod net;
 pub mod semantic;
