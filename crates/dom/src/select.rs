@@ -70,6 +70,10 @@ pub enum SurlPseudoClass {
     Disabled,
     Enabled,
     Checked,
+    /// 合法但未实现的伪类(:modal、:focus-visible 等):不匹配任何元素。
+    /// 抛解析错误会炸掉整条选择器,github 的 details-dialog 实测踩雷;
+    /// 浏览器语义是「已知伪类不命中」,对无像素的我们,不命中即正确近似。
+    Unsupported(CssString),
 }
 
 impl NonTSPseudoClass for SurlPseudoClass {
@@ -84,13 +88,14 @@ impl NonTSPseudoClass for SurlPseudoClass {
 
 impl ToCss for SurlPseudoClass {
     fn to_css<W: fmt::Write>(&self, dest: &mut W) -> fmt::Result {
-        dest.write_str(match self {
-            SurlPseudoClass::AnyLink => ":any-link",
-            SurlPseudoClass::Link => ":link",
-            SurlPseudoClass::Disabled => ":disabled",
-            SurlPseudoClass::Enabled => ":enabled",
-            SurlPseudoClass::Checked => ":checked",
-        })
+        match self {
+            SurlPseudoClass::AnyLink => dest.write_str(":any-link"),
+            SurlPseudoClass::Link => dest.write_str(":link"),
+            SurlPseudoClass::Disabled => dest.write_str(":disabled"),
+            SurlPseudoClass::Enabled => dest.write_str(":enabled"),
+            SurlPseudoClass::Checked => dest.write_str(":checked"),
+            SurlPseudoClass::Unsupported(name) => write!(dest, ":{}", name.0),
+        }
     }
 }
 
@@ -146,9 +151,8 @@ impl<'i> Parser<'i> for SurlParser {
             "enabled" => SurlPseudoClass::Enabled,
             "checked" => SurlPseudoClass::Checked,
             _ => {
-                return Err(location.new_custom_error(
-                    SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name),
-                ));
+                let _ = location;
+                SurlPseudoClass::Unsupported(CssString(name.as_ref().to_owned()))
             }
         })
     }
@@ -287,6 +291,7 @@ impl Element for ElementRef<'_> {
                     )
             }
             SurlPseudoClass::Checked => el.attr("checked").is_some() || el.attr("selected").is_some(),
+            SurlPseudoClass::Unsupported(_) => false,
         }
     }
 

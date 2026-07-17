@@ -22,9 +22,17 @@ struct Args {
     #[arg(long, group = "mode")]
     json: bool,
 
+    /// readability 式正文提取(Markdown)
+    #[arg(long, group = "mode")]
+    md: bool,
+
     /// 不执行页面 JS(只看服务器返回的原始结构)
     #[arg(long)]
     no_js: bool,
+
+    /// 一行运行统计到 stderr(各阶段耗时/请求数/错误数)
+    #[arg(long)]
+    stats: bool,
 }
 
 // PageRuntime 是单线程世界(Rc + JS 引擎),整个程序跑 current_thread;
@@ -37,7 +45,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    let doc_start = std::time::Instant::now();
     let (html, base) = load(&args.input).await?;
+    let doc_ms = doc_start.elapsed().as_millis();
+    let doc_bytes = html.len();
 
     let mut doc = surl_dom::parse_html(&html);
     if !args.no_js {
@@ -68,12 +79,45 @@ async fn main() -> anyhow::Result<()> {
         for miss in &report.modules.runtime_misses {
             tracing::warn!(target: "surl_js", "dynamic import miss: {miss}");
         }
+        if args.stats {
+            let t = report.timings;
+            let errors = report.scripts.errors.len() + report.modules.errors.len();
+            eprintln!(
+                "surl: stats: doc {:.1}s {}KB | scripts {} in {:.1}s | modules {}p/{}e in {:.1}s+{:.1}s | settle {:.1}s: {} timers {} fetches virtual {}ms | {} errors | total {:.1}s",
+                doc_ms as f64 / 1000.0,
+                doc_bytes / 1024,
+                report.scripts.executed,
+                t.scripts_ms as f64 / 1000.0,
+                report.modules.prefetched,
+                report.modules.evaluated,
+                t.module_prefetch_ms as f64 / 1000.0,
+                t.module_eval_ms as f64 / 1000.0,
+                t.settle_ms as f64 / 1000.0,
+                report.settle.timers_fired,
+                report.settle.fetches,
+                report.settle.virtual_elapsed_ms,
+                errors,
+                doc_start.elapsed().as_millis() as f64 / 1000.0,
+            );
+        }
         doc = rt.take_document();
+    } else if args.stats {
+        eprintln!(
+            "surl: stats: doc {:.1}s {}KB | no-js | total {:.1}s",
+            doc_ms as f64 / 1000.0,
+            doc_bytes / 1024,
+            doc_start.elapsed().as_millis() as f64 / 1000.0,
+        );
     }
 
     if args.dom {
         // 精确字节输出,不加尾换行:保证 --dom 的输出可以无损地再喂回来
         print!("{}", doc.to_html());
+        return Ok(());
+    }
+
+    if args.md {
+        print!("{}", surl_core::markdown::extract(&doc, base.as_ref()));
         return Ok(());
     }
 

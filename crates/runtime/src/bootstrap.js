@@ -1346,6 +1346,10 @@
     get documentElement() {
       return wrap(dom.documentElement(this._id));
     }
+    get referrer() {
+      // 无导航语境:规范值为空串(fathom analytics 对它裸调 indexOf)
+      return "";
+    }
     get body() {
       return wrap(dom.body(this._id));
     }

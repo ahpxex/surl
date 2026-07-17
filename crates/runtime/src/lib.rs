@@ -87,11 +87,21 @@ pub struct ModuleReport {
     pub runtime_misses: Vec<String>,
 }
 
+/// 各阶段墙钟耗时(仅观测用,不参与任何执行决策——确定性不受影响)。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LoadTimings {
+    pub scripts_ms: u128,
+    pub module_prefetch_ms: u128,
+    pub module_eval_ms: u128,
+    pub settle_ms: u128,
+}
+
 #[derive(Debug, Default)]
 pub struct LoadReport {
     pub scripts: ScriptReport,
     pub modules: ModuleReport,
     pub settle: SettleReport,
+    pub timings: LoadTimings,
 }
 
 enum Script {
@@ -318,6 +328,7 @@ impl PageRuntime {
     ) -> Result<LoadReport, RuntimeError> {
         let mut report = LoadReport::default();
 
+        let phase_start = std::time::Instant::now();
         let scripts: Vec<Script> = {
             let doc = self.dom.borrow();
             collect_scripts(&doc)
@@ -385,6 +396,7 @@ impl PageRuntime {
             }
         }
         drop(prefetched);
+        report.timings.scripts_ms = phase_start.elapsed().as_millis();
 
         // 第二遍:module script(defer 语义——classic 全部跑完后执行)
         if !module_scripts.is_empty() {
@@ -423,11 +435,14 @@ impl PageRuntime {
                     }
                 }
             }
+            let prefetch_start = std::time::Instant::now();
             let (loaded, prefetch_errors) =
                 modules::prefetch_graph(net, &self.module_sources, &entries).await;
+            report.timings.module_prefetch_ms = prefetch_start.elapsed().as_millis();
             report.modules.prefetched = loaded;
             report.modules.prefetch_errors = prefetch_errors;
 
+            let eval_start = std::time::Instant::now();
             for (idx, script) in module_scripts.iter().enumerate() {
                 let Script::Module { src, source } = script else {
                     unreachable!()
@@ -451,10 +466,13 @@ impl PageRuntime {
                 }
                 self.pump_jobs()?;
             }
+            report.timings.module_eval_ms = eval_start.elapsed().as_millis();
         }
 
         self.eval("__surl_fireReady()")?;
+        let settle_start = std::time::Instant::now();
         self.settle_into(net, &opts, &mut report.settle).await?;
+        report.timings.settle_ms = settle_start.elapsed().as_millis();
 
         // 运行期动态 import 的 miss 与模块 promise 的拒绝,一并入报告
         report.modules.runtime_misses = self.module_misses.borrow().clone();

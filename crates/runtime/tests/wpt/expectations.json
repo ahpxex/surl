@@ -2336,13 +2336,13 @@
   },
   "dom/nodes/Document-getElementsByTagName.html": {
     "Element in HTML namespace, no prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <aÇ></aÇ>] length 1, got [] length 0",
-    "Element in HTML namespace, prefix, non-ascii characters in name": "FAIL: invalid selector `test:aç`",
+    "Element in HTML namespace, prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <aÇ></aÇ>] length 1, got [] length 0",
     "Element in non-HTML namespace, no prefix, lowercase name": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <st></st>] length 1",
     "Element in non-HTML namespace, no prefix, uppercase name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <ST></ST>] length 1, got [] length 0",
     "Element in non-HTML namespace, non-ascii characters in name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <AÇ></AÇ>] length 1, got [] length 0",
     "Element in non-HTML namespace, prefix, lowercase name": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <st></st>] length 1",
-    "Element in non-HTML namespace, prefix, non-ascii characters in name": "FAIL: invalid selector `test:aç`",
-    "Element in non-HTML namespace, prefix, uppercase name": "FAIL: invalid selector `te:st`",
+    "Element in non-HTML namespace, prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <AÇ></AÇ>] length 1, got [] length 0",
+    "Element in non-HTML namespace, prefix, uppercase name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <ST></ST>] length 1, got [] length 0",
     "Interfaces": "FAIL: NodeList is not defined",
     "Should be able to set expando shadowing a proto prop (item)": "FAIL: HTMLCollection is not defined",
     "Should be able to set expando shadowing a proto prop (namedItem)": "FAIL: HTMLCollection is not defined",
@@ -2386,7 +2386,7 @@
     "HTMLCollection edge cases 1": "FAIL: assert_array_equals: lengths differ, expected array [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"foo\", \"bar\", \"baz\"] length 9, got [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"length\"] length 7"
   },
   "dom/nodes/Element-closest.html": {
-    "Element.closest with context node 'test11' and selector ':invalid'": "FAIL: invalid selector `:invalid`",
+    "Element.closest with context node 'test11' and selector ':invalid'": "FAIL: assert_equals: :invalid expected \"test2\" but got \"\"",
     "Element.closest with context node 'test4' and selector ':has(> :scope)'": "FAIL: invalid selector `:has(> :scope)`",
     "Element.closest with context node 'test4' and selector ':scope'": "FAIL: assert_equals: :scope expected \"test4\" but got \"\"",
     "Element.closest with context node 'test4' and selector 'select > :scope'": "FAIL: assert_equals: select > :scope expected \"test4\" but got \"\""
@@ -2401,13 +2401,13 @@
   },
   "dom/nodes/Element-getElementsByTagName.html": {
     "Element in HTML namespace, no prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <aÇ></aÇ>] length 1, got [] length 0",
-    "Element in HTML namespace, prefix, non-ascii characters in name": "FAIL: invalid selector `test:aç`",
+    "Element in HTML namespace, prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <aÇ></aÇ>] length 1, got [] length 0",
     "Element in non-HTML namespace, no prefix, lowercase name": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <st></st>] length 1",
     "Element in non-HTML namespace, no prefix, uppercase name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <ST></ST>] length 1, got [] length 0",
     "Element in non-HTML namespace, non-ascii characters in name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <AÇ></AÇ>] length 1, got [] length 0",
     "Element in non-HTML namespace, prefix, lowercase name": "FAIL: assert_array_equals: lengths differ, expected array [] length 0, got [Element node <st></st>] length 1",
-    "Element in non-HTML namespace, prefix, non-ascii characters in name": "FAIL: invalid selector `test:aç`",
-    "Element in non-HTML namespace, prefix, uppercase name": "FAIL: invalid selector `te:st`",
+    "Element in non-HTML namespace, prefix, non-ascii characters in name": "FAIL: assert_array_equals: All uppercase input lengths differ, expected array [Element node <AÇ></AÇ>] length 1, got [] length 0",
+    "Element in non-HTML namespace, prefix, uppercase name": "FAIL: assert_array_equals: lengths differ, expected array [Element node <ST></ST>] length 1, got [] length 0",
     "Interfaces": "FAIL: NodeList is not defined",
     "Should be able to set expando shadowing a proto prop (item)": "FAIL: HTMLCollection is not defined",
     "Should be able to set expando shadowing a proto prop (namedItem)": "FAIL: HTMLCollection is not defined",
@@ -3021,7 +3021,7 @@
     ":focus-within should be eventually up to date when moving to a subtree that would become inert via style": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
     ":focus-within should be eventually up to date when moving to an inert subtree": "FAIL: promise_test: Unhandled rejection with value: object \"TypeError: not a function\"",
     "focus-within should be updated when reparenting an element that has focus within": "FAIL: new_parent is not defined",
-    "focus-within should be updated when reparenting focused element directly": "FAIL: invalid selector `:focus-within`",
+    "focus-within should be updated when reparenting focused element directly": "FAIL: assert_array_equals: lengths differ, expected array [\"HTML\", \"BODY\", \"old_parent\", \"button\"] length 4, got [] length 0",
     "focus-within should remain the same when moving to the same parent": "FAIL: not a function"
   },
   "dom/nodes/moveBefore/fullscreen-preserve.html": {
@@ -3030,7 +3030,7 @@
   },
   "dom/nodes/moveBefore/hover-style-update.html": {
     "Element loses hover when moved to different position": "FAIL: promise_test: Unhandled rejection with value: object \"Error: action_sequence() is not implemented by testdriver-vendor.js\"",
-    "Hover works immediately after moved": "FAIL: promise_test: Unhandled rejection with value: object \"SyntaxError: invalid selector `:hover`\""
+    "Hover works immediately after moved": "FAIL: assert_equals: expected (string) \"rgb(0, 0, 255)\" but got (undefined) undefined"
   },
   "dom/nodes/moveBefore/listed-form-element-reset.html": {
     "Listed form element form owner is reset when a new form is moved closer before the listed element": "FAIL: assert_equals: button.form is correctly associated expected (object) Element node <form id=\"form1\"></form> but got (undefined) undefined"
