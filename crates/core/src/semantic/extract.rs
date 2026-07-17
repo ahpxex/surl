@@ -20,16 +20,17 @@ pub fn extract(doc: &Document, base: Option<&Url>) -> Snapshot {
         base,
         ids: HashMap::new(),
         labels: HashMap::new(),
-        next_uid: 0,
     };
     ex.build_maps();
 
     let title = ex.find_title();
-    let mut root = SemanticNode::new(ex.take_uid(), Role::Document);
+    let mut root = SemanticNode::new(Role::Document);
     root.name = title.clone();
     if let Some(html) = doc.document_element() {
         ex.walk_children(html, &mut root.children, false);
     }
+    root.uid = "root".to_owned();
+    crate::semantic::ir::assign_stable_uids(&mut root, 0);
     Snapshot {
         url: base.map(|u| u.to_string()),
         title,
@@ -83,16 +84,9 @@ struct Extractor<'a> {
     ids: HashMap<String, NodeId>,
     /// 目标控件 id → `<label for=…>` 元素
     labels: HashMap<String, NodeId>,
-    next_uid: u32,
 }
 
 impl Extractor<'_> {
-    fn take_uid(&mut self) -> u32 {
-        let uid = self.next_uid;
-        self.next_uid += 1;
-        uid
-    }
-
     fn build_maps(&mut self) {
         for id in self.doc.descendants(self.doc.root()) {
             let Some(el) = self.doc.element(id) else {
@@ -133,7 +127,7 @@ impl Extractor<'_> {
                     return;
                 }
                 if let Some(text) = non_empty(collapse_ws(contents)) {
-                    let mut node = SemanticNode::new(self.take_uid(), Role::Text);
+                    let mut node = SemanticNode::new(Role::Text);
                     node.name = Some(text);
                     out.push(node);
                 }
@@ -157,7 +151,7 @@ impl Extractor<'_> {
 
         // svg 子树是绘图指令,整体折叠成一张“图”
         if tag == "svg" {
-            let mut node = SemanticNode::new(self.take_uid(), Role::Img);
+            let mut node = SemanticNode::new(Role::Img);
             node.name = self.svg_name(id, el);
             out.push(node);
             return;
@@ -167,7 +161,7 @@ impl Extractor<'_> {
             Disposition::Skip => {}
             Disposition::Flatten => self.walk_children(id, out, suppress_text),
             Disposition::Emit(role) => {
-                let mut node = SemanticNode::new(self.take_uid(), role);
+                let mut node = SemanticNode::new(role);
                 node.name = self.accessible_name(id, el, role);
                 node.level = heading_level(el, tag, role);
                 node.href = self.resolve_href(el, role);
@@ -700,14 +694,20 @@ mod tests {
     }
 
     #[test]
-    fn uids_are_preorder() {
-        let snapshot = snap("<!doctype html><main><h1>a</h1><p>b</p></main>");
-        assert_eq!(snapshot.root.uid, 0);
-        let main = &snapshot.root.children[0];
-        assert_eq!(main.uid, 1);
-        assert_eq!(main.children[0].uid, 2); // h1
-        assert_eq!(main.children[1].uid, 3); // p
-        assert_eq!(main.children[1].children[0].uid, 4); // text
+    fn uids_are_stable_identities() {
+        // 同一页面两次提取:uid 逐节点一致
+        let a = snap("<!doctype html><main><h1>a</h1><p>b</p></main>");
+        let b = snap("<!doctype html><main><h1>a</h1><p>b</p></main>");
+        assert_eq!(a.root.uid, "root");
+        let (ma, mb) = (&a.root.children[0], &b.root.children[0]);
+        assert_eq!(ma.uid, mb.uid);
+        assert_eq!(ma.children[0].uid, mb.children[0].uid);
+        assert!(!ma.uid.is_empty() && ma.uid != ma.children[0].uid);
+        // 无关兄弟的插入不移动既有节点的 uid
+        let c = snap("<!doctype html><main><figure></figure><h1>a</h1><p>b</p></main>");
+        let mc = &c.root.children[0];
+        let h1_c = mc.children.iter().find(|n| n.role == Role::Heading).unwrap();
+        assert_eq!(h1_c.uid, ma.children[0].uid);
     }
 
     #[test]

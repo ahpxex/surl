@@ -5,10 +5,13 @@ use clap::Parser;
 
 /// curl gives you bytes. Browsers give you pixels. surl gives you structure.
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, args_conflicts_with_subcommands = true)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// URL(http/https)、本地 HTML 文件路径,或 `-` 从 stdin 读
-    input: String,
+    input: Option<String>,
 
     /// 语义大纲(默认输出)
     #[arg(long, group = "mode")]
@@ -35,6 +38,20 @@ struct Args {
     stats: bool,
 }
 
+#[derive(clap::Subcommand)]
+enum Command {
+    /// 结构 diff:按稳定 uid 对齐两份语义树,输出 增/删/改。
+    /// 输入是 URL、本地 HTML,或 --json 存下的快照(.json)。
+    /// 退出码:0 无差异,1 有差异(watch/CI 友好)。
+    Diff {
+        a: String,
+        b: String,
+        /// 两侧都不执行 JS
+        #[arg(long)]
+        no_js: bool,
+    },
+}
+
 // PageRuntime 是单线程世界(Rc + JS 引擎),整个程序跑 current_thread;
 // 网络并发靠 async,不靠线程。
 #[tokio::main(flavor = "current_thread")]
@@ -45,8 +62,18 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    if let Some(Command::Diff { a, b, no_js }) = args.command {
+        let sa = snapshot_for(&a, no_js).await?;
+        let sb = snapshot_for(&b, no_js).await?;
+        let changes = surl_core::semantic::diff::diff(&sa, &sb);
+        print!("{}", surl_core::semantic::diff::to_text(&changes));
+        std::process::exit(if changes.is_empty() { 0 } else { 1 });
+    }
+    let Some(input) = args.input.as_deref() else {
+        anyhow::bail!("missing input (URL / file / `-`); see --help");
+    };
     let doc_start = std::time::Instant::now();
-    let (html, base) = load(&args.input).await?;
+    let (html, base) = load(input).await?;
     let doc_ms = doc_start.elapsed().as_millis();
     let doc_bytes = html.len();
 
@@ -128,6 +155,23 @@ async fn main() -> anyhow::Result<()> {
         print!("{}", snapshot.to_tree_string());
     }
     Ok(())
+}
+
+/// diff 的一侧:.json 直接读快照,其余走完整渲染管线。
+async fn snapshot_for(input: &str, no_js: bool) -> anyhow::Result<surl_core::semantic::Snapshot> {
+    if input.ends_with(".json") && std::path::Path::new(input).exists() {
+        let raw = std::fs::read_to_string(input).with_context(|| format!("read {input}"))?;
+        return serde_json::from_str(&raw).context("parse snapshot JSON");
+    }
+    let (html, base) = load(input).await?;
+    let mut doc = surl_dom::parse_html(&html);
+    if !no_js {
+        let rt = surl_runtime::PageRuntime::with_base(doc, base.clone())?;
+        let net = surl_core::net::ReqwestClient::new()?;
+        rt.load(&net, surl_runtime::SettleOptions::default()).await?;
+        doc = rt.take_document();
+    }
+    Ok(surl_core::semantic::extract(&doc, base.as_ref()))
 }
 
 /// 取输入:返回 HTML 文本与用于解析相对链接的 base URL。

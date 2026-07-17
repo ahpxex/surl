@@ -70,7 +70,7 @@ fn json_mode_is_valid_and_matches_tree_semantics() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("--json emits valid JSON");
     assert_eq!(v["root"]["role"], "document");
     assert_eq!(v["title"], "Acme — Ship faster");
-    assert_eq!(v["root"]["uid"], 0);
+    assert_eq!(v["root"]["uid"], "root");
     // landmark 顺序:banner / main / complementary / contentinfo
     let roles: Vec<&str> = v["root"]["children"]
         .as_array()

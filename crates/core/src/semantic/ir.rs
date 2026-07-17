@@ -1,14 +1,17 @@
 //! 语义树 IR:对齐 a11y snapshot 风格(role/name/state/href + uid)。
 //!
-//! uid 目前是先序遍历序号占位;跨次渲染的稳定身份是 diff(M5)要解的树匹配
-//! 问题,字段先留在 IR 里。
+//! uid 是稳定节点身份:role/level/href 的结构哈希沿祖先链传播,同键兄弟
+//! 用出现序号消歧。设计目标——跨次渲染不漂移(diff 的前提):
+//! - 无关子树的改动不影响本节点 uid(只依赖自身键 + 祖先链);
+//! - 插入不同键的兄弟不移动既有 uid(序号只在同键节点间计数);
+//! - name/value 变化不改变 uid(它们是 diff 的「修改」信号,不是身份)。
 
 use std::fmt::Write;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// 节点角色,取 ARIA role 的一个实用子集。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Document,
@@ -115,7 +118,8 @@ impl Role {
 }
 
 /// 节点状态。全部可缺省,JSON 里只序列化非默认值。
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct State {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
@@ -133,9 +137,10 @@ impl State {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SemanticNode {
-    pub uid: u32,
+    #[serde(default)]
+    pub uid: String,
     pub role: Role,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -148,14 +153,14 @@ pub struct SemanticNode {
     pub level: Option<u8>,
     #[serde(flatten)]
     pub state: State,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub children: Vec<SemanticNode>,
 }
 
 impl SemanticNode {
-    pub fn new(uid: u32, role: Role) -> Self {
+    pub fn new(role: Role) -> Self {
         SemanticNode {
-            uid,
+            uid: String::new(),
             role,
             name: None,
             href: None,
@@ -168,7 +173,7 @@ impl SemanticNode {
 }
 
 /// 一次抓取+提取的完整产物。
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
@@ -183,6 +188,58 @@ impl Snapshot {
         let mut out = String::new();
         render(&self.root, 0, &mut out);
         out
+    }
+}
+
+impl SemanticNode {
+    /// 一行摘要(--tree 的单行形态,diff 输出复用)。
+    pub fn line(&self) -> String {
+        let mut out = String::new();
+        out.push_str(self.role.as_str());
+        if let Some(level) = self.level {
+            let _ = write!(out, "[{level}]");
+        }
+        if let Some(name) = &self.name {
+            let _ = write!(out, " {name:?}");
+        }
+        if let Some(value) = &self.value {
+            let _ = write!(out, " value={value:?}");
+        }
+        if let Some(href) = &self.href {
+            let _ = write!(out, " -> {href}");
+        }
+        out
+    }
+}
+
+/// FNV-1a:标准库 Hasher 不承诺跨版本稳定,uid 必须稳定,手写。
+fn fnv1a(data: &[u8], seed: u64) -> u64 {
+    let mut h = seed ^ 0xcbf2_9ce4_8422_2325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// 后序赋 uid:node 的键 = role|level|href,uid = hash(祖先链, 键, 同键序号)。
+pub fn assign_stable_uids(node: &mut SemanticNode, parent_hash: u64) {
+    let mut seen: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    for child in &mut node.children {
+        let mut key = String::new();
+        key.push_str(child.role.as_str());
+        if let Some(level) = child.level {
+            let _ = write!(key, "|{level}");
+        }
+        if let Some(href) = &child.href {
+            let _ = write!(key, "|{href}");
+        }
+        let key_hash = fnv1a(key.as_bytes(), 0);
+        let occ = seen.entry(key_hash).or_insert(0);
+        let h = fnv1a(&occ.to_le_bytes(), parent_hash ^ key_hash);
+        *occ += 1;
+        child.uid = format!("{:08x}", (h >> 32) as u32 ^ h as u32);
+        assign_stable_uids(child, h);
     }
 }
 
@@ -229,15 +286,15 @@ mod tests {
 
     #[test]
     fn tree_string_format() {
-        let mut root = SemanticNode::new(0, Role::Document);
+        let mut root = SemanticNode::new(Role::Document);
         root.name = Some("T".into());
-        let mut h = SemanticNode::new(1, Role::Heading);
+        let mut h = SemanticNode::new(Role::Heading);
         h.level = Some(1);
         h.name = Some("Hello".into());
-        let mut a = SemanticNode::new(2, Role::Link);
+        let mut a = SemanticNode::new(Role::Link);
         a.name = Some("go".into());
         a.href = Some("https://x.dev/".into());
-        let mut cb = SemanticNode::new(3, Role::CheckBox);
+        let mut cb = SemanticNode::new(Role::CheckBox);
         cb.name = Some("agree".into());
         cb.state.checked = Some(true);
         cb.state.disabled = true;
@@ -255,19 +312,19 @@ mod tests {
 
     #[test]
     fn json_shape_skips_defaults() {
-        let node = SemanticNode::new(5, Role::Paragraph);
+        let node = SemanticNode::new(Role::Paragraph);
         let v = serde_json::to_value(&node).unwrap();
-        assert_eq!(v, serde_json::json!({"uid": 5, "role": "paragraph"}));
+        assert_eq!(v, serde_json::json!({"uid": "", "role": "paragraph"}));
     }
 
     #[test]
     fn json_option_role_renamed() {
-        let mut node = SemanticNode::new(1, Role::OptionItem);
+        let mut node = SemanticNode::new(Role::OptionItem);
         node.state.selected = Some(true);
         let v = serde_json::to_value(&node).unwrap();
         assert_eq!(
             v,
-            serde_json::json!({"uid": 1, "role": "option", "selected": true})
+            serde_json::json!({"uid": "", "role": "option", "selected": true})
         );
     }
 }

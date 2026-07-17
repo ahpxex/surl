@@ -12,11 +12,10 @@ pub fn extract(doc: &Document, base: Option<&Url>) -> String {
     let mut out = String::new();
 
     // 标题:正文根里若没有 h1,用 <title> 起头
-    if let Some(title) = page_title(doc) {
-        if !subtree_has_h1(doc, root) && !title.trim().is_empty() {
+    if let Some(title) = page_title(doc)
+        && !subtree_has_h1(doc, root) && !title.trim().is_empty() {
             out.push_str(&format!("# {}\n\n", collapse_ws(&title)));
         }
-    }
 
     let mut w = Writer {
         doc,
@@ -287,59 +286,56 @@ impl Writer<'_> {
     fn inline_child_into(&self, child: NodeId, out: &mut String, shallow: bool) {
         {
             {
-                match &self.doc.node(child).data {
-                    NodeData::Element(el) => {
-                    if self.skip(el) {
-                        return;
-                    }
-                    match el.local_name().as_ref() {
-                        "a" => {
-                            let inner = self.inline_text(child);
-                            let text = collapse_ws(&inner);
-                            match el.attr("href") {
-                                Some(href) if !text.is_empty() => {
-                                    let href = self.resolve(href);
-                                    out.push_str(&format!("[{text}]({href})"));
-                                }
-                                _ => out.push_str(&text),
+                if let NodeData::Element(el) = &self.doc.node(child).data {
+                if self.skip(el) {
+                    return;
+                }
+                match el.local_name().as_ref() {
+                    "a" => {
+                        let inner = self.inline_text(child);
+                        let text = collapse_ws(&inner);
+                        match el.attr("href") {
+                            Some(href) if !text.is_empty() => {
+                                let href = self.resolve(href);
+                                out.push_str(&format!("[{text}]({href})"));
                             }
-                        }
-                        "strong" | "b" => {
-                            let t = collapse_ws(&self.inline_text(child));
-                            if !t.is_empty() {
-                                out.push_str(&format!("**{t}**"));
-                            }
-                        }
-                        "em" | "i" => {
-                            let t = collapse_ws(&self.inline_text(child));
-                            if !t.is_empty() {
-                                out.push_str(&format!("*{t}*"));
-                            }
-                        }
-                        "code" => {
-                            let t = self.doc.text_content(child);
-                            if !t.is_empty() {
-                                out.push_str(&format!("`{t}`"));
-                            }
-                        }
-                        "br" => out.push('\n'),
-                        "img" => {
-                            if let Some(src) = el.attr("src") {
-                                let alt = el.attr("alt").unwrap_or("");
-                                out.push_str(&format!("![{alt}]({})", self.resolve(src)));
-                            }
-                        }
-                        "ul" | "ol" | "li" | "p" | "div" | "section" | "table" | "pre"
-                        | "blockquote"
-                            if shallow => {}
-                        _ => {
-                            out.push(' ');
-                            self.inline_into(child, out, shallow);
-                            out.push(' ');
+                            _ => out.push_str(&text),
                         }
                     }
+                    "strong" | "b" => {
+                        let t = collapse_ws(&self.inline_text(child));
+                        if !t.is_empty() {
+                            out.push_str(&format!("**{t}**"));
+                        }
                     }
-                    _ => {}
+                    "em" | "i" => {
+                        let t = collapse_ws(&self.inline_text(child));
+                        if !t.is_empty() {
+                            out.push_str(&format!("*{t}*"));
+                        }
+                    }
+                    "code" => {
+                        let t = self.doc.text_content(child);
+                        if !t.is_empty() {
+                            out.push_str(&format!("`{t}`"));
+                        }
+                    }
+                    "br" => out.push('\n'),
+                    "img" => {
+                        if let Some(src) = el.attr("src") {
+                            let alt = el.attr("alt").unwrap_or("");
+                            out.push_str(&format!("![{alt}]({})", self.resolve(src)));
+                        }
+                    }
+                    "ul" | "ol" | "li" | "p" | "div" | "section" | "table" | "pre"
+                    | "blockquote"
+                        if shallow => {}
+                    _ => {
+                        out.push(' ');
+                        self.inline_into(child, out, shallow);
+                        out.push(' ');
+                    }
+                }
                 }
             }
         }
